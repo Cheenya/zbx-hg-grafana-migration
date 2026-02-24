@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import urllib3  # type: ignore
-import requests  # type: ignore
+from api_clients import ZabbixAPI
 from openpyxl import Workbook  # type: ignore
 from openpyxl.styles import Font  # type: ignore
 from openpyxl.utils import get_column_letter  # type: ignore
@@ -27,40 +27,6 @@ TAG_ENV = "ENV"
 
 # --- Куда сохраняем Excel ---
 OUT_XLSX = "zbx_env_values_dump.xlsx"
-
-
-class ZabbixAPI:
-    def __init__(self, api_url: str, timeout: int = 120) -> None:
-        self.api_url = api_url
-        self.timeout = timeout
-        self.auth: Optional[str] = None
-        self._id = 1
-
-    def call(self, method: str, params: Dict[str, Any]) -> Any:
-        payload: Dict[str, Any] = {
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-            "id": self._id,
-        }
-        self._id += 1
-        if self.auth is not None:
-            payload["auth"] = self.auth
-
-        r = requests.post(
-            self.api_url,
-            json=payload,
-            timeout=self.timeout,
-            verify=False,  # как просили
-        )
-        r.raise_for_status()
-        data = r.json()
-        if "error" in data:
-            raise RuntimeError(f"Zabbix API error ({method}): {data['error']}")
-        return data["result"]
-
-    def login(self, username: str, password: str) -> None:
-        self.auth = self.call("user.login", {"username": username, "password": password})
 
 
 def get_tag_value(tags: List[Dict[str, Any]], tag_name: str) -> Optional[str]:
@@ -110,7 +76,7 @@ class EnvInfo:
 
 
 def main() -> int:
-    api = ZabbixAPI(ZBX_URL)
+    api = ZabbixAPI(ZBX_URL, timeout_sec=120)
     api.login(ZBX_USER, ZBX_PASSWORD)
 
     print("Fetching hosts...")

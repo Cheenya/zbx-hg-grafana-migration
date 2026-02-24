@@ -33,12 +33,13 @@ import urllib3  # type: ignore
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-import requests  # type: ignore
 from openpyxl import Workbook  # type: ignore
 from openpyxl.styles import Alignment, Font  # type: ignore
 from openpyxl.utils import get_column_letter  # type: ignore
 
 # --- config (рядом) ---
+from api_clients import ZabbixAPI
+from artifact_paths import build_migration_plan_path, build_seed_path
 
 from config import CONFIG, load_connection_from_env_or_prompt, load_grafana_from_module
 
@@ -49,45 +50,6 @@ def is_excluded_group(name: str) -> bool:
     if not name:
         return False
     return any(rx.search(name) for rx in EXCLUDED_GROUP_PATTERNS)
-
-
-# =========================
-# Zabbix JSON-RPC
-# =========================
-class ZabbixAPI:
-    def __init__(self, api_url: str, timeout: int = 60):
-        self.api_url = api_url
-        self.timeout = timeout
-        self.auth: Optional[str] = None
-        self._id = 1
-
-    def call(self, method: str, params: Dict[str, Any]) -> Any:
-        payload: Dict[str, Any] = {
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-            "id": self._id,
-        }
-        self._id += 1
-        if self.auth is not None:
-            payload["auth"] = self.auth
-
-        r = requests.post(
-            self.api_url,
-            json=payload,
-            timeout=int(CONFIG.runtime.http_timeout_sec),
-            verify=False,
-        )
-        r.raise_for_status()
-        data = r.json()
-
-        if "error" in data:
-            raise RuntimeError(f"Zabbix API error ({method}): {data['error']}")
-        return data["result"]
-
-    def login(self, username: str, password: str) -> None:
-        # Zabbix 7.0+: username/password
-        self.auth = self.call("user.login", {"username": username, "password": password})
 
 
 # =========================
@@ -192,20 +154,6 @@ def permission_name(p: Any) -> str:
     except Exception:
         return str(p)
     return {0: "deny", 2: "read", 3: "read-write"}.get(p, str(p))
-
-
-def build_seed_path(output_xlsx: str) -> str:
-    base = output_xlsx
-    if base.lower().endswith(".xlsx"):
-        base = base[:-5]
-    return f"{base}_zbx_seed.json"
-
-
-def build_migration_plan_path(output_xlsx: str) -> str:
-    base = output_xlsx
-    if base.lower().endswith(".xlsx"):
-        base = base[:-5]
-    return f"{base}_migration_plan.json"
 
 
 def save_zabbix_seed(
@@ -937,7 +885,7 @@ def build_workbooks(
 def run_audit(as_filter: Optional[Iterable[str]] = None, output_xlsx: Optional[str] = None) -> List[str]:
     conn = load_connection_from_env_or_prompt(interactive=False)
 
-    api = ZabbixAPI(conn.api_url)
+    api = ZabbixAPI(conn.api_url, timeout_sec=int(CONFIG.runtime.http_timeout_sec))
     api.login(conn.username, conn.password)
 
     print("Fetching hosts...")

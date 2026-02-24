@@ -5,58 +5,19 @@
 from __future__ import annotations
 
 import argparse
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import urllib3  # type: ignore
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-import requests  # type: ignore
-
+from api_clients import ZabbixAPI
 from backup_io import load_backup
+from config import CONFIG, load_connection_from_env_or_prompt
 
 
 def _filter_keys(data: Dict[str, Any], allowed: set) -> Dict[str, Any]:
     return {k: v for k, v in (data or {}).items() if k in allowed}
-from config import CONFIG, load_connection_from_env_or_prompt
-
-
-class ZabbixAPI:
-    def __init__(self, api_url: str, timeout: int = 60):
-        self.api_url = api_url
-        self.timeout = timeout
-        self.auth: Optional[str] = None
-        self._id = 1
-
-    def call(self, method: str, params: Dict[str, Any]) -> Any:
-        payload: Dict[str, Any] = {
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-            "id": self._id,
-        }
-        self._id += 1
-        if self.auth is not None:
-            payload["auth"] = self.auth
-
-        try:
-            r = requests.post(
-                self.api_url,
-                json=payload,
-                timeout=int(CONFIG.runtime.http_timeout_sec),
-                verify=False,
-            )
-            r.raise_for_status()
-        except Exception as e:
-            raise RuntimeError(f"Zabbix API error ({method}): {e}") from e
-        data = r.json()
-
-        if "error" in data:
-            raise RuntimeError(f"Zabbix API error ({method}): {data['error']}")
-        return data["result"]
-
-    def login(self, username: str, password: str) -> None:
-        self.auth = self.call("user.login", {"username": username, "password": password})
 
 
 def restore_backup(api: ZabbixAPI, backup_path: str) -> None:
@@ -172,7 +133,7 @@ def main() -> int:
     args = parser.parse_args()
 
     conn = load_connection_from_env_or_prompt(interactive=False)
-    api = ZabbixAPI(conn.api_url)
+    api = ZabbixAPI(conn.api_url, timeout_sec=int(CONFIG.runtime.http_timeout_sec))
     api.login(conn.username, conn.password)
 
     print(f"Restoring backup: {args.backup}")

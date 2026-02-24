@@ -14,6 +14,7 @@ from openpyxl import Workbook  # type: ignore
 from openpyxl.styles import Alignment, Font  # type: ignore
 from openpyxl.utils import get_column_letter  # type: ignore
 
+from artifact_paths import build_seed_path
 from config import CONFIG, load_grafana_from_module
 from grafana_audit import collect_grafana_matches
 
@@ -60,13 +61,6 @@ def load_seed(path: str) -> tuple[Dict[str, Dict[str, List[str]]], List[Dict[str
     mapping_rows = list(raw.get("mapping_rows") or [])
     unknown_rows = list(raw.get("unknown_hosts") or [])
     return out, mapping_rows, unknown_rows
-
-
-def build_seed_path(output_xlsx: str) -> str:
-    base = output_xlsx
-    if base.lower().endswith(".xlsx"):
-        base = base[:-5]
-    return f"{base}_zbx_seed.json"
 
 
 def write_grafana_workbook(

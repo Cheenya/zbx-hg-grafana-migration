@@ -12,8 +12,7 @@ import urllib3  # type: ignore
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-import requests  # type: ignore
-
+from api_clients import GrafanaAPI
 from config import CONFIG, GrafanaConnection
 
 # Грубые паттерны, чтобы вытягивать кандидатов из JSON
@@ -22,51 +21,6 @@ NEW_RX = re.compile(r"(BNK|DOM)/[^\"\\\\]+")
 TRAILING_CLEAN_RX = re.compile(r"[\\s,;:\\)\\]\\}\\'\\\"]+$")
 LEADING_CLEAN_RX = re.compile(r"^[\\s\\(\\[\\{\\'\\\"]+")
 REGEX_META_RX = re.compile(r"[\\^$.*+?()\\[\\]{}|]")
-
-
-class GrafanaAPI:
-    def __init__(self, base_url: str, username: str, password: str, token: str, timeout_sec: Optional[int] = None) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.timeout = int(timeout_sec or CONFIG.runtime.http_timeout_sec)
-        self.s = requests.Session()
-        if token:
-            self.s.headers.update({"Authorization": f"Bearer {token}"})
-        if username or password:
-            self.s.auth = (username, password)
-        self.s.headers.update(
-            {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            }
-        )
-
-    def _get(self, path: str, params: Optional[dict] = None) -> Any:
-        url = f"{self.base_url}{path}"
-        try:
-            r = self.s.get(url, params=params, timeout=self.timeout, verify=False)
-            r.raise_for_status()
-        except Exception as e:
-            raise RuntimeError(f"Grafana API error (GET {path}): {e}") from e
-        try:
-            return r.json()
-        except Exception as e:
-            raise RuntimeError(f"Grafana API invalid JSON (GET {path}): {e}") from e
-
-    def list_dashboards(self) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
-        page, limit = 1, 500
-        while True:
-            chunk = self._get("/api/search", params={"type": "dash-db", "limit": limit, "page": page})
-            if not chunk:
-                break
-            out.extend(chunk)
-            if len(chunk) < limit:
-                break
-            page += 1
-        return out
-
-    def get_dashboard_by_uid(self, uid: str) -> Dict[str, Any]:
-        return self._get(f"/api/dashboards/uid/{uid}")
 
 
 def _normalize_candidate(raw: str) -> str:
@@ -145,7 +99,13 @@ def collect_grafana_matches(
     if not meta:
         return {}
 
-    api = GrafanaAPI(conn.base_url, conn.username, conn.password, conn.token)
+    api = GrafanaAPI(
+        conn.base_url,
+        conn.username,
+        conn.password,
+        conn.token,
+        timeout_sec=int(CONFIG.runtime.http_timeout_sec),
+    )
     dashboards = api.list_dashboards()
 
     counts: Dict[Tuple[str, str, str, str, str], int] = defaultdict(int)

@@ -48,6 +48,15 @@
 - `backup_model.py` / `backup_io.py`
   - Модели данных + save/load.
 
+### Общие модули (рефакторинг)
+- `api_clients.py`
+  - Единые HTTP-клиенты: `ZabbixAPI`, `GrafanaAPI`.
+  - Используются в audit/backup/restore/migrate/ENV detector.
+- `scope_utils.py`
+  - Нормализация AS-scope и генерация безопасных имён файлов по scope.
+- `artifact_paths.py`
+  - Единая генерация путей `*_zbx_seed.json` и `*_migration_plan.json`.
+
 ### Конфигурация
 - `config.py`
   - Все параметры/секреты/флаги выполнения.

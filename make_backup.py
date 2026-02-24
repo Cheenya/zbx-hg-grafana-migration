@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
@@ -13,54 +12,13 @@ import urllib3  # type: ignore
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-import requests  # type: ignore
-
+from api_clients import ZabbixAPI
 from backup_io import save_backup
 from backup_model import ActionBackup, BackupData, BackupMeta, HostBackup, UserBackup, UserGroupBackup
 from config import CONFIG, load_connection_from_env_or_prompt
+from scope_utils import build_scope_backup_path, normalize_scope
 
 import re
-
-
-# =========================
-# Zabbix JSON-RPC клиент
-# =========================
-class ZabbixAPI:
-    def __init__(self, api_url: str, timeout: int = 60):
-        self.api_url = api_url
-        self.timeout = timeout
-        self.auth: Optional[str] = None
-        self._id = 1
-
-    def call(self, method: str, params: Dict[str, Any]) -> Any:
-        payload: Dict[str, Any] = {
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-            "id": self._id,
-        }
-        self._id += 1
-        if self.auth is not None:
-            payload["auth"] = self.auth
-
-        try:
-            r = requests.post(
-                self.api_url,
-                json=payload,
-                timeout=int(CONFIG.runtime.http_timeout_sec),
-                verify=False,
-            )
-            r.raise_for_status()
-        except Exception as e:
-            raise RuntimeError(f"Zabbix API error ({method}): {e}") from e
-        data = r.json()
-
-        if "error" in data:
-            raise RuntimeError(f"Zabbix API error ({method}): {data['error']}")
-        return data["result"]
-
-    def login(self, username: str, password: str) -> None:
-        self.auth = self.call("user.login", {"username": username, "password": password})
 
 
 # =========================
@@ -197,18 +155,7 @@ def fetch_users(api: ZabbixAPI) -> List[Dict[str, Any]]:
 # Сборка бэкапа
 # =========================
 def build_backup_filename(scope_as: Optional[Iterable[str]], base_path: str) -> str:
-    base_dir = os.path.dirname(base_path) or "."
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    scope_list = [str(x).strip() for x in (scope_as or []) if str(x).strip()]
-    if not scope_list:
-        scope_part = "ALL"
-    elif len(scope_list) <= 3:
-        safe = [re.sub(r"[^A-Za-z0-9_-]", "_", x) for x in scope_list]
-        scope_part = "-".join(safe)
-    else:
-        scope_part = f"MULTI{len(scope_list)}"
-    filename = f"zbx_backup_{scope_part}_{timestamp}.json.gz"
-    return os.path.join(base_dir, filename)
+    return build_scope_backup_path(base_path, scope_as)
 
 
 def create_backup(
@@ -398,12 +345,12 @@ def main() -> int:
     parser.add_argument("--out", dest="output", help="Backup filename (.json or .json.gz)")
     args = parser.parse_args()
 
-    scope_as = list(CONFIG.runtime.audit_scope_as) if CONFIG.runtime.audit_scope_as else []
+    scope_as = normalize_scope(CONFIG.runtime.audit_scope_as)
     if not scope_as:
         raise RuntimeError("Backup scope is empty. Set CONFIG.runtime.audit_scope_as in config.py.")
 
     conn = load_connection_from_env_or_prompt(interactive=False)
-    api = ZabbixAPI(conn.api_url)
+    api = ZabbixAPI(conn.api_url, timeout_sec=int(CONFIG.runtime.http_timeout_sec))
     api.login(conn.username, conn.password)
 
     output_path = args.output
