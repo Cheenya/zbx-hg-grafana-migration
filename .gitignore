@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual envs
+.venv/
+venv/
+
+# Generated reports/artifacts
+*.xlsx
+*.json.gz
+*.zip
+zbx_migration_bundle/
+
+# Local config cache
+.codex/
