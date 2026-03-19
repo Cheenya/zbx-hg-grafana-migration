@@ -16,6 +16,7 @@ venv/
 *.json.gz
 *.zip
 zbx_migration_bundle/
+v2_output/
 
 # Local config cache
 .codex/
