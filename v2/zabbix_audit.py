@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
+from collections import defaultdict
+from typing import Any, Dict, List, Sequence, Set
 
 from api_clients import ZabbixAPI
-from config import CONFIG
 
-from . import settings
+from . import config
 from .common import (
     extract_action_groupids,
     extract_action_recipients,
@@ -34,7 +33,7 @@ def fetch_hosts(api: ZabbixAPI) -> List[Dict[str, Any]]:
         "selectGroups": ["groupid", "name"],
         "selectTags": ["tag", "value"],
     }
-    if settings.MONITORED_HOSTS_ONLY:
+    if config.MONITORED_HOSTS_ONLY:
         params["monitored_hosts"] = True
     return api.call("host.get", params)
 
@@ -132,7 +131,7 @@ def build_scope_report(
     scope_env_lower = normalize_lower_set(scope_env_values)
 
     if not scope_as_values:
-        raise RuntimeError("v2 audit scope is empty. Set v2/settings.py SCOPE_AS or CONFIG.runtime.audit_scope_as.")
+        raise RuntimeError("v2 audit scope is empty. Set v2/config.py SCOPE_AS.")
 
     hostgroups = fetch_hostgroups(api)
     hosts = fetch_hosts(api)
@@ -158,16 +157,20 @@ def build_scope_report(
 
     scope_hosts: List[Dict[str, Any]] = []
     scope_hosts_skipped_env: List[Dict[str, Any]] = []
-    old_bucket: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"groupid": "", "hostids": set(), "host_names": set(), "as_values": set(), "env_values": set()})
-    new_bucket: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"groupid": "", "hostids": set(), "host_names": set(), "as_values": set(), "env_values": set()})
+    old_bucket: Dict[str, Dict[str, Any]] = defaultdict(
+        lambda: {"groupid": "", "hostids": set(), "host_names": set(), "as_values": set(), "env_values": set()}
+    )
+    new_bucket: Dict[str, Dict[str, Any]] = defaultdict(
+        lambda: {"groupid": "", "hostids": set(), "host_names": set(), "as_values": set(), "env_values": set()}
+    )
     scope_groupids: Set[str] = set()
     scope_asn_values: Set[str] = set()
 
     for host in hosts:
         tags = host.get("tags") or []
-        as_value = get_tag_value(tags, CONFIG.tags.AS)
-        env_value = get_tag_value(tags, CONFIG.tags.ENV)
-        asn_value = get_tag_value(tags, CONFIG.tags.ASN)
+        as_value = get_tag_value(tags, config.TAG_AS)
+        env_value = get_tag_value(tags, config.TAG_ENV)
+        asn_value = get_tag_value(tags, config.TAG_ASN)
 
         if not as_value or as_value.strip().lower() not in scope_as_lower:
             continue
@@ -299,11 +302,11 @@ def build_scope_report(
             tag_value = resolve_tagfilter_value(tag_filter)
             if not tag_name or tag_value is None:
                 continue
-            if tag_name == CONFIG.tags.AS and tag_value.strip().lower() in scope_as_lower:
+            if tag_name == config.TAG_AS and tag_value.strip().lower() in scope_as_lower:
                 matching_filters.append(f"{tag_name}={tag_value}")
-            elif tag_name == CONFIG.tags.ASN and tag_value in scope_asn_values:
+            elif tag_name == config.TAG_ASN and tag_value in scope_asn_values:
                 matching_filters.append(f"{tag_name}={tag_value}")
-            elif scope_env_lower and tag_name == CONFIG.tags.ENV and tag_value.strip().lower() in scope_env_lower:
+            elif scope_env_lower and tag_name == config.TAG_ENV and tag_value.strip().lower() in scope_env_lower:
                 matching_filters.append(f"{tag_name}={tag_value}")
 
         usergroup_id = str(usergroup.get("usrgrpid") or "")
@@ -359,14 +362,14 @@ def build_scope_report(
             "name": row["group_name"],
             "kind": "OLD",
         }
-        for row in _group_bucket_rows(old_bucket, settings.GROUP_SAMPLE_HOSTS)
+        for row in _group_bucket_rows(old_bucket, config.GROUP_SAMPLE_HOSTS)
     ] + [
         {
             "groupid": row["groupid"],
             "name": row["group_name"],
             "kind": "NEW",
         }
-        for row in _group_bucket_rows(new_bucket, settings.GROUP_SAMPLE_HOSTS)
+        for row in _group_bucket_rows(new_bucket, config.GROUP_SAMPLE_HOSTS)
     ]
 
     summary = {
@@ -385,8 +388,8 @@ def build_scope_report(
         "summary": summary,
         "hosts": scope_hosts,
         "hosts_skipped_env": scope_hosts_skipped_env,
-        "groups_old": _group_bucket_rows(old_bucket, settings.GROUP_SAMPLE_HOSTS),
-        "groups_new": _group_bucket_rows(new_bucket, settings.GROUP_SAMPLE_HOSTS),
+        "groups_old": _group_bucket_rows(old_bucket, config.GROUP_SAMPLE_HOSTS),
+        "groups_new": _group_bucket_rows(new_bucket, config.GROUP_SAMPLE_HOSTS),
         "actions": action_rows,
         "usergroups": usergroup_rows,
         "maintenances": maintenance_rows,

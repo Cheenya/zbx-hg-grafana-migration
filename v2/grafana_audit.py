@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
+from typing import Any, Dict, List, Sequence, Set, Tuple
 
 from api_clients import GrafanaAPI
-from config import CONFIG, GrafanaConnection
 
+from . import config
 from .common import normalize_values
 
 
@@ -47,7 +47,7 @@ def _pattern_prefixes(scope_as: Sequence[str]) -> Dict[str, List[str]]:
 
 
 def collect_grafana_rows(
-    conn: GrafanaConnection,
+    conn: config.GrafanaConnection,
     scope_as: Sequence[str],
     inventory_hostgroups: Sequence[Dict[str, str]],
 ) -> List[Dict[str, Any]]:
@@ -68,7 +68,7 @@ def collect_grafana_rows(
         conn.username,
         conn.password,
         conn.token,
-        timeout_sec=int(CONFIG.runtime.http_timeout_sec),
+        timeout_sec=int(config.HTTP_TIMEOUT_SEC),
     )
     dashboards = api.list_dashboards()
     prefixes = _pattern_prefixes(scope_as)

@@ -4,7 +4,7 @@
 
 Что делает `python -m v2.audit_scope`:
 - читает Zabbix без изменений;
-- берет scope по AS из `v2/settings.py` или корневого `config.py`;
+- берет scope по AS из `v2/config.py`;
 - опционально режет выборку по `ENV` для pilot-прогонов;
 - собирает инвентаризацию хостов, OLD/NEW групп, actions, usergroups, maintenances;
 - отдельно ищет упоминания в Grafana dashboards;
@@ -17,18 +17,16 @@
 - не меняет Grafana.
 
 Точки настройки:
-- `v2/settings.py`
+- `v2/config.py`
+  - URL/логины/пароли
   - `SCOPE_AS`
   - `SCOPE_ENVS`
-  - `ENABLE_GRAFANA`
-  - `OUTPUT_DIR`
-- `config.py`
-  - URL/логины/пароли
   - имена тегов
   - regex исключаемых групп
+  - runtime-параметры нового контура
 
 Рекомендуемый pilot:
-1. В `v2/settings.py` задать одну AS.
+1. В `v2/config.py` задать одну AS.
 2. Для первого прогона задать `SCOPE_ENVS = ("NONPROD",)`.
 3. Запустить `python -m v2.audit_scope`.
 4. Проверить `v2_output/*.xlsx` и `v2_output/*.json`.

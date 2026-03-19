@@ -8,11 +8,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from openpyxl.utils import get_column_letter  # type: ignore
 
-from config import CONFIG
-from . import settings
+from . import config
 
 
-EXCLUDED_GROUP_PATTERNS = [re.compile(pattern) for pattern in CONFIG.runtime.excluded_group_patterns]
+EXCLUDED_GROUP_PATTERNS = [re.compile(pattern) for pattern in config.EXCLUDED_GROUP_PATTERNS]
 
 
 def normalize_values(values: Optional[Iterable[str]]) -> List[str]:
@@ -105,13 +104,13 @@ def build_scope_part(scope_as: Sequence[str], scope_envs: Sequence[str]) -> str:
 
 
 def build_output_paths(scope_as: Sequence[str], scope_envs: Sequence[str]) -> Tuple[str, str]:
-    os.makedirs(settings.OUTPUT_DIR, exist_ok=True)
+    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     scope_part = build_scope_part(scope_as, scope_envs)
-    base_name = f"{settings.OUTPUT_PREFIX}_{scope_part}_{timestamp}"
+    base_name = f"{config.OUTPUT_PREFIX}_{scope_part}_{timestamp}"
     return (
-        os.path.join(settings.OUTPUT_DIR, f"{base_name}.xlsx"),
-        os.path.join(settings.OUTPUT_DIR, f"{base_name}.json"),
+        os.path.join(config.OUTPUT_DIR, f"{base_name}.xlsx"),
+        os.path.join(config.OUTPUT_DIR, f"{base_name}.json"),
     )
 
 
