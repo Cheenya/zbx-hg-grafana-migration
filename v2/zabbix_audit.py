@@ -480,6 +480,70 @@ def _mapping_candidates_by_oldid(rows: Sequence[Dict[str, Any]]) -> Dict[str, Li
     return bucket
 
 
+def _build_host_enrichment_rows(
+    host_rows: Sequence[Dict[str, Any]],
+    old_name_to_groupid: Dict[str, str],
+    mapping_candidates: Dict[str, List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for host_row in host_rows:
+        old_groups = [item.strip() for item in str(host_row.get("old_groups") or "").split(",") if item.strip()]
+        new_groups = {item.strip() for item in str(host_row.get("new_groups") or "").split(",") if item.strip()}
+        suggested_pairs: List[str] = []
+        suggested_new_groups: Set[str] = set()
+        missing_new_groups: Set[str] = set()
+        manual_required = False
+
+        for old_group in old_groups:
+            old_groupid = old_name_to_groupid.get(old_group, "")
+            candidates = mapping_candidates.get(old_groupid) or []
+            if not candidates:
+                manual_required = True
+                suggested_pairs.append(f"{old_group} -> (no candidate)")
+                continue
+
+            top = candidates[0]
+            new_group = str(top.get("new_group") or "").strip()
+            status = str(top.get("status") or "")
+            if not new_group:
+                manual_required = True
+                suggested_pairs.append(f"{old_group} -> (empty)")
+                continue
+
+            suggested_new_groups.add(new_group)
+            suggested_pairs.append(f"{old_group} -> {new_group} [{status}]")
+            if status != "auto_selected":
+                manual_required = True
+            if new_group not in new_groups:
+                missing_new_groups.add(new_group)
+
+        rows.append(
+            {
+                "hostid": host_row.get("hostid", ""),
+                "host": host_row.get("host", ""),
+                "name": host_row.get("name", ""),
+                "status": host_row.get("status", ""),
+                "status_label": host_row.get("status_label", ""),
+                "AS": host_row.get("AS", ""),
+                "ASN": host_row.get("ASN", ""),
+                "ENV_RAW": host_row.get("ENV_RAW", ""),
+                "ENV_SCOPE": host_row.get("ENV_SCOPE", ""),
+                "TARGET_ENV_SCOPE": host_row.get("ENV_SCOPE", ""),
+                "GAS": host_row.get("GAS", ""),
+                "TARGET_GAS": host_row.get("GAS", ""),
+                "GUEST_NAME": host_row.get("GUEST_NAME", ""),
+                "old_groups": host_row.get("old_groups", ""),
+                "new_groups": host_row.get("new_groups", ""),
+                "suggested_pairs": "; ".join(suggested_pairs),
+                "suggested_new_groups": join_sorted(suggested_new_groups),
+                "missing_new_groups": join_sorted(missing_new_groups),
+                "host_action": "add_new_if_missing" if old_groups else "",
+                "manual_required": "yes" if manual_required else "",
+            }
+        )
+    return rows
+
+
 def _preview_rows_for_object(
     object_type: str,
     object_id: str,
@@ -564,10 +628,18 @@ def build_scope_report(
     maintenances = fetch_maintenances(api)
 
     groupid_to_name: Dict[str, str] = {}
+    grafana_old_groups: List[Dict[str, str]] = []
     for group in hostgroups:
         if group.get("groupid") is None or not group.get("name"):
             continue
-        groupid_to_name[str(group["groupid"])] = str(group["name"])
+        group_name = str(group["name"])
+        group_id = str(group["groupid"])
+        groupid_to_name[group_id] = group_name
+        if is_excluded_group(group_name):
+            continue
+        matched_as = [as_value for as_value in scope_as_values if _is_old_group_for_as(group_name, as_value)]
+        for as_value in matched_as:
+            grafana_old_groups.append({"groupid": group_id, "name": group_name, "kind": "OLD", "AS": as_value})
 
     users_by_id: Dict[str, Dict[str, Any]] = {}
     user_media_by_id: Dict[str, List[str]] = {}
@@ -802,6 +874,7 @@ def build_scope_report(
     mapping_plan_rows = _build_mapping_plan_rows(old_bucket, new_bucket)
     mapping_candidates = _mapping_candidates_by_oldid(mapping_plan_rows)
     old_scope_groupids = {str(data["groupid"]) for data in old_bucket.values() if str(data.get("groupid") or "").strip()}
+    old_name_to_groupid = {str(name): str(data.get("groupid") or "") for name, data in old_bucket.items()}
     zabbix_mapping_preview: List[Dict[str, Any]] = []
 
     action_rows: List[Dict[str, Any]] = []
@@ -1020,6 +1093,17 @@ def build_scope_report(
         preview_seen.add(signature)
         preview_rows_sorted.append(row)
 
+    host_enrichment_rows = _build_host_enrichment_rows(_sort_host_rows(scope_hosts), old_name_to_groupid, mapping_candidates)
+
+    grafana_old_groups_dedup: List[Dict[str, str]] = []
+    grafana_old_seen: Set[tuple[str, str]] = set()
+    for row in sorted(grafana_old_groups, key=lambda item: (str(item["AS"]).lower(), str(item["name"]).lower(), str(item["groupid"]))):
+        signature = (str(row["AS"]), str(row["groupid"]))
+        if signature in grafana_old_seen:
+            continue
+        grafana_old_seen.add(signature)
+        grafana_old_groups_dedup.append(row)
+
     inventory_hostgroups = [
         {
             "groupid": row["groupid"],
@@ -1064,6 +1148,7 @@ def build_scope_report(
         "hosts_in_scope": len(scope_hosts),
         "hosts_old_scope": len(scope_hosts_replace),
         "hosts_no_any_new": len(scope_hosts_no_any_new),
+        "hosts_enrichment": len(host_enrichment_rows),
         "hosts_clean": len(scope_hosts_clean),
         "hosts_disabled": len(scope_hosts_disabled),
         "hosts_physical_hint": len(scope_hosts_physical),
@@ -1089,6 +1174,7 @@ def build_scope_report(
         "hosts": _sort_host_rows(scope_hosts),
         "hosts_replace": _sort_host_rows(scope_hosts_replace),
         "hosts_no_any_new": _sort_host_rows(scope_hosts_no_any_new),
+        "host_enrichment": host_enrichment_rows,
         "hosts_clean": _sort_host_rows(scope_hosts_clean),
         "hosts_disabled": _sort_host_rows(scope_hosts_disabled),
         "hosts_physical": _sort_host_rows(scope_hosts_physical),
@@ -1112,6 +1198,7 @@ def build_scope_report(
             "scope_env": scope_env_value,
             "hostids": sorted(row["hostid"] for row in scope_hosts if row.get("hostid")),
             "hostgroups": sorted(inventory_hostgroups, key=lambda item: (item["kind"], item["name"].lower())),
+            "grafana_old_groups": grafana_old_groups_dedup,
             "actionids": sorted(row["actionid"] for row in action_rows if row.get("actionid")),
             "usergroupids": sorted(row["usrgrpid"] for row in usergroup_rows if row.get("usrgrpid")),
             "userids": sorted(scoped_user_ids),

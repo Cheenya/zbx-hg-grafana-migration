@@ -5,7 +5,7 @@ from datetime import datetime
 
 import config
 from api_clients import ZabbixAPI
-from common import build_artifact_path, normalize_scope_env, normalize_values
+from common import build_artifact_path, normalize_scope_env, normalize_values, resolve_scope_org_pairs
 from grafana_audit import collect_grafana_report
 from mapping_plan import write_mapping_plan_xlsx
 from report_writer import save_inventory_json, write_grafana_workbook, write_workbook
@@ -46,7 +46,8 @@ def main() -> int:
         try:
             print("Running Grafana inventory (v2)...")
             grafana = config.load_grafana_connection()
-            grafana_report = collect_grafana_report(grafana, scope_as, report["inventory"]["hostgroups"])
+            scope_pairs = resolve_scope_org_pairs(scope_as, config.GRAFANA_ORGIDS)
+            grafana_report = collect_grafana_report(grafana, scope_pairs, report["inventory"]["grafana_old_groups"])
             report["grafana"] = grafana_report["detail_rows"]
             report["grafana_summary"] = grafana_report["summary_rows"]
             report["summary"]["grafana_rows"] = len(report["grafana"])

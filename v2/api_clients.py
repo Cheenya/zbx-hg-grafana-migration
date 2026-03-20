@@ -56,6 +56,7 @@ class GrafanaAPI:
         base_url: str,
         username: str = "",
         password: str = "",
+        org_id: int = 0,
         timeout_sec: int = 60,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -64,6 +65,8 @@ class GrafanaAPI:
         if username or password:
             self.session.auth = (username, password)
         self.session.headers.update({"Content-Type": "application/json", "Accept": "application/json"})
+        if int(org_id or 0) > 0:
+            self.session.headers.update({"X-Grafana-Org-Id": str(int(org_id))})
 
     def _request(
         self,

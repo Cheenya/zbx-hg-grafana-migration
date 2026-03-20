@@ -63,6 +63,7 @@ def write_impact_plan_xlsx(data: Dict[str, Any], path: str) -> None:
 
     grafana_ws = wb.create_sheet("GRAFANA_CHANGES")
     grafana_headers = [
+        "grafana_org_id",
         "dashboard_uid",
         "dashboard_title",
         "dashboard_url",
@@ -338,6 +339,7 @@ def build_impact_plan(
                 continue
             grafana_changes.append(
                 {
+                    "grafana_org_id": str(row.get("grafana_org_id") or ""),
                     "dashboard_uid": str(row.get("dashboard_uid") or ""),
                     "dashboard_title": str(row.get("dashboard_title") or ""),
                     "dashboard_url": str(row.get("dashboard_url") or ""),
@@ -381,6 +383,7 @@ def build_impact_plan(
 
         grafana_changes.append(
             {
+                "grafana_org_id": str(row.get("grafana_org_id") or ""),
                 "dashboard_uid": str(row.get("dashboard_uid") or ""),
                 "dashboard_title": str(row.get("dashboard_title") or ""),
                 "dashboard_url": str(row.get("dashboard_url") or ""),

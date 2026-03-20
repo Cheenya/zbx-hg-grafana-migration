@@ -11,6 +11,7 @@ ZBX_PASSWORD = ""
 GRAFANA_URL = ""
 GRAFANA_USER = ""
 GRAFANA_PASSWORD = ""
+GRAFANA_ORGIDS: tuple[int, ...] = ()
 
 
 # Scope нового контура.

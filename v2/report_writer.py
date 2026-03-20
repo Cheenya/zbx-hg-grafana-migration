@@ -73,15 +73,14 @@ SKIPPED_HOST_HEADERS = [
 
 GRAFANA_SUMMARY_HEADERS = [
     "AS",
+    "grafana_org_id",
     "dashboard_uid",
     "dashboard_title",
     "folder_title",
     "dashboard_url",
     "hits_total",
     "exact_old",
-    "exact_new",
     "pattern_old",
-    "pattern_new",
     "variable_hits",
     "panel_hits",
     "dashboard_hits",
@@ -91,6 +90,7 @@ GRAFANA_SUMMARY_HEADERS = [
 
 GRAFANA_DETAIL_HEADERS = [
     "AS",
+    "grafana_org_id",
     "dashboard_uid",
     "dashboard_title",
     "folder_title",
@@ -146,6 +146,7 @@ def save_inventory_json(report: Dict[str, Any], path: str) -> None:
         "hosts": report["hosts"],
         "hosts_replace": report["hosts_replace"],
         "hosts_no_any_new": report["hosts_no_any_new"],
+        "host_enrichment": report["host_enrichment"],
         "hosts_clean": report["hosts_clean"],
         "hosts_disabled": report["hosts_disabled"],
         "hosts_physical": report["hosts_physical"],
@@ -219,6 +220,34 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
 
     replace_missing_ws = wb.create_sheet("HOSTS_NO_ANY_NEW")
     _append_rows(replace_missing_ws, report["hosts_no_any_new"], HOST_HEADERS)
+
+    enrichment_ws = wb.create_sheet("HOST_ENRICHMENT")
+    _append_rows(
+        enrichment_ws,
+        report["host_enrichment"],
+        [
+            "hostid",
+            "host",
+            "name",
+            "status",
+            "status_label",
+            "AS",
+            "ASN",
+            "ENV_RAW",
+            "ENV_SCOPE",
+            "TARGET_ENV_SCOPE",
+            "GAS",
+            "TARGET_GAS",
+            "GUEST_NAME",
+            "old_groups",
+            "new_groups",
+            "suggested_pairs",
+            "suggested_new_groups",
+            "missing_new_groups",
+            "host_action",
+            "manual_required",
+        ],
+    )
 
     disabled_ws = wb.create_sheet("HOSTS_DISABLED")
     _append_rows(disabled_ws, report["hosts_disabled"], HOST_HEADERS)

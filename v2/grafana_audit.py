@@ -10,7 +10,6 @@ from common import join_sorted, normalize_values
 
 
 OLD_RX = re.compile(r"\b(?:BNK|DOM)-[A-Za-z0-9_.:-]+(?:-[A-Za-z0-9_.:-]+)*\b")
-NEW_RX = re.compile(r"\b(?:BNK|DOM)/(?:[A-Za-z0-9_.:-]+(?:/[A-Za-z0-9_.:-]+)*)\b")
 REGEX_META_RX = re.compile(r"[\\^$*+?()\[\]{}|]")
 QUERY_FIELD_MARKERS = (".query", ".definition", ".expr", ".expression", ".rawsql", ".sql", ".regex")
 PATTERN_FIELD_KINDS = {"query", "definition", "expression", "sql", "regex", "current", "options"}
@@ -46,34 +45,9 @@ def _walk_panels(panels: Sequence[Dict[str, Any]], path: str = "dashboard.panels
             yield from _walk_panels(nested, f"{panel_path}.panels")
 
 
-def _pattern_prefixes(scope_as: Sequence[str]) -> Dict[str, List[str]]:
-    out: Dict[str, List[str]] = {}
-    for as_value in normalize_values(scope_as):
-        lower = as_value.lower()
-        out[as_value] = [
-            f"bnk-{lower}",
-            f"dom-{lower}",
-            f"bnk/as/{lower}",
-            f"dom/as/{lower}",
-        ]
-    return out
-
-
-def _infer_group_scope_as(group_name: str, scope_as: Sequence[str]) -> Set[str]:
-    text = str(group_name or "").strip().lower()
-    hits: Set[str] = set()
-    for as_value in normalize_values(scope_as):
-        lower = as_value.lower()
-        if (
-            text.startswith(f"bnk-{lower}")
-            or text.startswith(f"dom-{lower}")
-            or text == f"bnk/as/{lower}"
-            or text == f"dom/as/{lower}"
-            or text.startswith(f"bnk/as/{lower}/")
-            or text.startswith(f"dom/as/{lower}/")
-        ):
-            hits.add(as_value)
-    return hits
+def _pattern_prefixes(as_value: str) -> List[str]:
+    lower = str(as_value or "").strip().lower()
+    return [f"bnk-{lower}", f"dom-{lower}"] if lower else []
 
 
 def _field_kind(json_path: str) -> str:
@@ -205,6 +179,7 @@ def _panel_contexts(dashboard: Dict[str, Any], dashboard_url: str) -> List[Dict[
 def _add_detail_row(counts: Dict[Tuple[str, ...], int], row: Dict[str, Any]) -> None:
     key = (
         str(row.get("AS") or ""),
+        str(row.get("grafana_org_id") or ""),
         str(row.get("dashboard_uid") or ""),
         str(row.get("dashboard_title") or ""),
         str(row.get("folder_title") or ""),
@@ -227,13 +202,11 @@ def _add_detail_row(counts: Dict[Tuple[str, ...], int], row: Dict[str, Any]) -> 
 
 
 def _build_summary_rows(detail_rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    buckets: Dict[Tuple[str, str, str, str, str], Dict[str, Any]] = defaultdict(
+    buckets: Dict[Tuple[str, str, str, str, str, str], Dict[str, Any]] = defaultdict(
         lambda: {
             "hits_total": 0,
             "exact_old": 0,
-            "exact_new": 0,
             "pattern_old": 0,
-            "pattern_new": 0,
             "variable_hits": 0,
             "panel_hits": 0,
             "dashboard_hits": 0,
@@ -245,6 +218,7 @@ def _build_summary_rows(detail_rows: Sequence[Dict[str, Any]]) -> List[Dict[str,
     for row in detail_rows:
         key = (
             str(row.get("AS") or ""),
+            str(row.get("grafana_org_id") or ""),
             str(row.get("dashboard_uid") or ""),
             str(row.get("dashboard_title") or ""),
             str(row.get("folder_title") or ""),
@@ -256,12 +230,8 @@ def _build_summary_rows(detail_rows: Sequence[Dict[str, Any]]) -> List[Dict[str,
         match_type = str(row.get("match_type") or "")
         if match_type == "OLD":
             bucket["exact_old"] += count
-        elif match_type == "NEW":
-            bucket["exact_new"] += count
         elif match_type == "OLD_PATTERN":
             bucket["pattern_old"] += count
-        elif match_type == "NEW_PATTERN":
-            bucket["pattern_new"] += count
 
         location_kind = str(row.get("location_kind") or "")
         if location_kind == "variable":
@@ -279,20 +249,19 @@ def _build_summary_rows(detail_rows: Sequence[Dict[str, Any]]) -> List[Dict[str,
             bucket["variables"].add(variable_name)
 
     rows: List[Dict[str, Any]] = []
-    for key in sorted(buckets.keys(), key=lambda item: (item[0].lower(), item[2].lower(), item[1])):
+    for key in sorted(buckets.keys(), key=lambda item: (item[0].lower(), int(item[1] or 0), item[3].lower(), item[2])):
         bucket = buckets[key]
         rows.append(
             {
                 "AS": key[0],
-                "dashboard_uid": key[1],
-                "dashboard_title": key[2],
-                "folder_title": key[3],
-                "dashboard_url": key[4],
+                "grafana_org_id": key[1],
+                "dashboard_uid": key[2],
+                "dashboard_title": key[3],
+                "folder_title": key[4],
+                "dashboard_url": key[5],
                 "hits_total": bucket["hits_total"],
                 "exact_old": bucket["exact_old"],
-                "exact_new": bucket["exact_new"],
                 "pattern_old": bucket["pattern_old"],
-                "pattern_new": bucket["pattern_new"],
                 "variable_hits": bucket["variable_hits"],
                 "panel_hits": bucket["panel_hits"],
                 "dashboard_hits": bucket["dashboard_hits"],
@@ -305,66 +274,63 @@ def _build_summary_rows(detail_rows: Sequence[Dict[str, Any]]) -> List[Dict[str,
 
 def collect_grafana_report(
     conn: config.GrafanaConnection,
-    scope_as: Sequence[str],
-    inventory_hostgroups: Sequence[Dict[str, str]],
+    scope_pairs: Sequence[Tuple[str, int]],
+    scope_old_groups: Sequence[Dict[str, str]],
 ) -> Dict[str, List[Dict[str, Any]]]:
     exact_old: Dict[str, Set[str]] = defaultdict(set)
-    exact_new: Dict[str, Set[str]] = defaultdict(set)
-    for row in inventory_hostgroups:
+    for row in scope_old_groups:
         name = str(row.get("name") or "").strip()
-        if not name:
-            continue
-        matched_as = _infer_group_scope_as(name, scope_as)
-        for as_value in matched_as:
-            kind = str(row.get("kind") or "").upper()
-            if kind == "OLD":
-                exact_old[name].add(as_value)
-            elif kind == "NEW":
-                exact_new[name].add(as_value)
+        as_value = str(row.get("AS") or "").strip()
+        if name and as_value:
+            exact_old[name].add(as_value)
 
-    api = GrafanaAPI(
-        conn.base_url,
-        conn.username,
-        conn.password,
-        timeout_sec=int(config.HTTP_TIMEOUT_SEC),
-    )
-    dashboards = api.list_dashboards()
-    prefixes = _pattern_prefixes(scope_as)
     counts: Dict[Tuple[str, ...], int] = defaultdict(int)
+    seen_dashboards: Set[Tuple[str, int, str]] = set()
 
-    for dashboard_row in dashboards:
-        uid = str(dashboard_row.get("uid") or "").strip()
-        if not uid:
-            continue
+    for as_value, org_id in scope_pairs:
+        api = GrafanaAPI(
+            conn.base_url,
+            conn.username,
+            conn.password,
+            org_id=int(org_id or 0),
+            timeout_sec=int(config.HTTP_TIMEOUT_SEC),
+        )
+        dashboards = api.list_dashboards()
+        as_prefixes = _pattern_prefixes(as_value)
 
-        dashboard_payload = api.get_dashboard_by_uid(uid)
-        dashboard = dashboard_payload.get("dashboard") or dashboard_payload
-        dashboard_title = str(dashboard.get("title") or dashboard_row.get("title") or "")
-        folder_title = str(dashboard_row.get("folderTitle") or "")
-        dashboard_url = _build_dashboard_url(conn.base_url, dashboard_row, dashboard_payload, uid)
-        contexts = []
-        contexts.extend(_dashboard_contexts(dashboard))
-        contexts.extend(_variable_contexts(dashboard))
-        contexts.extend(_panel_contexts(dashboard, dashboard_url))
-
-        for context in contexts:
-            text = str(context.get("text") or "")
-            if not text.strip():
+        for dashboard_row in dashboards:
+            uid = str(dashboard_row.get("uid") or "").strip()
+            if not uid:
                 continue
-            text_lower = text.lower()
-            direct_hit = False
+            if (as_value, int(org_id or 0), uid) in seen_dashboards:
+                continue
+            seen_dashboards.add((as_value, int(org_id or 0), uid))
 
-            for match in OLD_RX.finditer(text):
-                candidate = match.group(0).strip()
-                matched_as = exact_old.get(candidate, set())
-                if not matched_as:
+            dashboard_payload = api.get_dashboard_by_uid(uid)
+            dashboard = dashboard_payload.get("dashboard") or dashboard_payload
+            dashboard_title = str(dashboard.get("title") or dashboard_row.get("title") or "")
+            folder_title = str(dashboard_row.get("folderTitle") or "")
+            dashboard_url = _build_dashboard_url(conn.base_url, dashboard_row, dashboard_payload, uid)
+            contexts = []
+            contexts.extend(_dashboard_contexts(dashboard))
+            contexts.extend(_variable_contexts(dashboard))
+            contexts.extend(_panel_contexts(dashboard, dashboard_url))
+
+            for context in contexts:
+                text = str(context.get("text") or "")
+                if not text.strip():
                     continue
-                direct_hit = True
-                for as_value in matched_as:
+                text_lower = text.lower()
+
+                for match in OLD_RX.finditer(text):
+                    candidate = match.group(0).strip()
+                    if as_value not in exact_old.get(candidate, set()):
+                        continue
                     _add_detail_row(
                         counts,
                         {
                             "AS": as_value,
+                            "grafana_org_id": str(int(org_id or 0)),
                             "dashboard_uid": uid,
                             "dashboard_title": dashboard_title,
                             "folder_title": folder_title,
@@ -377,92 +343,53 @@ def collect_grafana_report(
                         },
                     )
 
-            for match in NEW_RX.finditer(text):
-                candidate = match.group(0).strip()
-                matched_as = exact_new.get(candidate, set())
-                if not matched_as:
+                if not _is_pattern_candidate(text, str(context.get("location_kind") or ""), str(context.get("field_kind") or "")):
                     continue
-                direct_hit = True
-                for as_value in matched_as:
-                    _add_detail_row(
-                        counts,
-                        {
-                            "AS": as_value,
-                            "dashboard_uid": uid,
-                            "dashboard_title": dashboard_title,
-                            "folder_title": folder_title,
-                            "dashboard_url": dashboard_url,
-                            "reference_kind": "direct_group_name",
-                            "match_type": "NEW",
-                            "matched_string": candidate,
-                            "source_text": text,
-                            **context,
-                        },
-                    )
-
-            if not _is_pattern_candidate(text, str(context.get("location_kind") or ""), str(context.get("field_kind") or "")):
-                continue
-
-            for as_value, as_prefixes in prefixes.items():
                 if not any(prefix in text_lower for prefix in as_prefixes):
                     continue
+                if "bnk-" not in text_lower and "dom-" not in text_lower:
+                    continue
 
-                if "bnk-" in text_lower or "dom-" in text_lower:
-                    _add_detail_row(
-                        counts,
-                        {
-                            "AS": as_value,
-                            "dashboard_uid": uid,
-                            "dashboard_title": dashboard_title,
-                            "folder_title": folder_title,
-                            "dashboard_url": dashboard_url,
-                            "reference_kind": "pattern_or_regex" if direct_hit else "scoped_string",
-                            "match_type": "OLD_PATTERN",
-                            "matched_string": text,
-                            "source_text": text,
-                            **context,
-                        },
-                    )
-
-                if "bnk/" in text_lower or "dom/" in text_lower:
-                    _add_detail_row(
-                        counts,
-                        {
-                            "AS": as_value,
-                            "dashboard_uid": uid,
-                            "dashboard_title": dashboard_title,
-                            "folder_title": folder_title,
-                            "dashboard_url": dashboard_url,
-                            "reference_kind": "pattern_or_regex" if direct_hit else "scoped_string",
-                            "match_type": "NEW_PATTERN",
-                            "matched_string": text,
-                            "source_text": text,
-                            **context,
-                        },
-                    )
+                _add_detail_row(
+                    counts,
+                    {
+                        "AS": as_value,
+                        "grafana_org_id": str(int(org_id or 0)),
+                        "dashboard_uid": uid,
+                        "dashboard_title": dashboard_title,
+                        "folder_title": folder_title,
+                        "dashboard_url": dashboard_url,
+                        "reference_kind": "pattern_or_regex",
+                        "match_type": "OLD_PATTERN",
+                        "matched_string": text,
+                        "source_text": text,
+                        **context,
+                    },
+                )
 
     detail_rows: List[Dict[str, Any]] = []
     for key, count in sorted(counts.items(), key=lambda item: item[0]):
         detail_rows.append(
             {
                 "AS": key[0],
-                "dashboard_uid": key[1],
-                "dashboard_title": key[2],
-                "folder_title": key[3],
-                "dashboard_url": key[4],
-                "panel_url": key[5],
-                "panel_id": key[6],
-                "panel_title": key[7],
-                "panel_type": key[8],
-                "variable_name": key[9],
-                "variable_type": key[10],
-                "location_kind": key[11],
-                "field_kind": key[12],
-                "reference_kind": key[13],
-                "match_type": key[14],
-                "matched_string": key[15],
-                "source_text": key[16],
-                "json_path": key[17],
+                "grafana_org_id": key[1],
+                "dashboard_uid": key[2],
+                "dashboard_title": key[3],
+                "folder_title": key[4],
+                "dashboard_url": key[5],
+                "panel_url": key[6],
+                "panel_id": key[7],
+                "panel_title": key[8],
+                "panel_type": key[9],
+                "variable_name": key[10],
+                "variable_type": key[11],
+                "location_kind": key[12],
+                "field_kind": key[13],
+                "reference_kind": key[14],
+                "match_type": key[15],
+                "matched_string": key[16],
+                "source_text": key[17],
+                "json_path": key[18],
                 "count": count,
             }
         )

@@ -138,6 +138,20 @@ def build_output_paths(scope_as: Sequence[str], scope_env: str) -> Tuple[str, st
     )
 
 
+def resolve_scope_org_pairs(scope_as: Sequence[str], orgids: Sequence[int]) -> List[Tuple[str, int]]:
+    as_values = normalize_values(scope_as)
+    normalized_orgids = [int(value) for value in orgids]
+    if not as_values:
+        return []
+    if not normalized_orgids:
+        return [(as_value, 0) for as_value in as_values]
+    if len(normalized_orgids) == 1:
+        return [(as_value, normalized_orgids[0]) for as_value in as_values]
+    if len(normalized_orgids) != len(as_values):
+        raise RuntimeError("v2/config.py GRAFANA_ORGIDS must be empty, one value, or match SCOPE_AS length.")
+    return list(zip(as_values, normalized_orgids))
+
+
 def join_sorted(values: Iterable[Any]) -> str:
     normalized = sorted({str(value).strip() for value in values if str(value).strip()})
     return ", ".join(normalized)
