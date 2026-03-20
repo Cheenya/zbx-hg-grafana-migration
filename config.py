@@ -1,40 +1,87 @@
-# -*- coding: utf-8 -*-
-"""config.py — общий конфиг для наших скриптов Zabbix/Grafana.
-
-Сюда вынесены ВСЕ настраиваемые параметры:
-- подключение к Zabbix API (URL/логин/пароль)
-- подключение к Grafana API (URL/token)
-- имена тегов (AS/ASN/ENV и т.д.)
-- правила UNKNOWN
-- пороги для эталона (частотное соответствие)
-- параметры выгрузки в Excel
-- исключения хост-групп (regex)
-- runtime-параметры (timeouts, лимиты, backup)
-"""
-
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
-# Можно заполнить здесь напрямую, чтобы не использовать env или вводить интерактивно
+# Подключения. Заполняются прямо здесь.
 ZBX_URL = ""
 ZBX_USER = ""
 ZBX_PASSWORD = ""
 
-# Grafana (логин/пароль)
 GRAFANA_URL = ""
 GRAFANA_USER = ""
 GRAFANA_PASSWORD = ""
-# Опционально: token (если используете service account)
-GRAFANA_TOKEN = ""
+GRAFANA_ORGIDS: tuple[int, ...] = ()
+
+
+# Scope нового контура.
+SCOPE_AS: tuple[str, ...] = ()
+SCOPE_ENV: str = ""
+
+
+# Runtime.
+HTTP_TIMEOUT_SEC: int = 90
+MONITORED_HOSTS_ONLY: bool = False
+ENABLE_GRAFANA: bool = True
+OUTPUT_DIR: str = "v2_output"
+OUTPUT_PREFIX: str = "scope_audit_v2"
+GRAFANA_REPORT_PREFIX: str = "grafana_audit_v2"
+MAPPING_PLAN_PREFIX: str = "mapping_plan_v2"
+IMPACT_PLAN_PREFIX: str = "impact_plan_v2"
+BACKUP_PREFIX: str = "scope_backup_v2"
+GROUP_SAMPLE_HOSTS: int = 10
+SAVE_JSON_INVENTORY: bool = True
+
+
+# Входные файлы для plan/backup/verify.
+SOURCE_AUDIT_JSON: str = ""
+SOURCE_MAPPING_PLAN_XLSX: str = ""
+SOURCE_IMPACT_PLAN_JSON: str = ""
+SOURCE_BACKUP_FILE: str = ""
+
+
+# Теги и исключения.
+TAG_AS: str = "AS"
+TAG_ASN: str = "ASN"
+TAG_ENV: str = "ENV"
+TAG_GAS: str = "GAS"
+TAG_GUEST_NAME: str = "GUEST-NAME"
+
+UNKNOWN_TAG_VALUE: str = "UNKNOWN"
+UNKNOWN_GROUP_NAME: str = "UNKNOWN"
+EXCLUDE_UNKNOWN_FROM_STATS: bool = True
+
+ENV_PROD_LABEL: str = "PROD"
+ENV_NONPROD_LABEL: str = "NONPROD"
+PROD_ENV_VALUES: tuple[str, ...] = ("PROD",)
+
+MAPPING_MIN_INTERSECTION: int = 2
+MAPPING_MIN_OLD_COVERAGE: float = 0.20
+MAPPING_MIN_NEW_COVERAGE: float = 0.20
+MAPPING_FORBID_ENV_MISMATCH: bool = True
+
+EXCLUDED_GROUP_PATTERNS: tuple[str, ...] = (
+    r"^Maintenance-dc-enable$",
+    r"^Maintenance-",
+    r"^(BNK|DOM)-(LINUX|WINDOWS)(-|$)",
+    r"^(BNK|DOM)-(POSTGRES|POSTGRESQL|PG)(-|$)",
+)
+
+# Эвристики для отчёта. Это только подсветка, не управляющая логика.
+PHYSICAL_HINT_PATTERNS: tuple[str, ...] = (
+    r"(?i)\bbare[ -]?metal\b",
+    r"(?i)\bphysical\b",
+    r"(?i)\b(?:idrac|iLO|imm|ipmi)\b",
+)
+
+DISCOVERY_HINT_PATTERNS: tuple[str, ...] = (
+    r"(?i)\bdiscovery\b",
+    r"(?i)\bdiscover(?:ed|y)?\b",
+)
 
 
 @dataclass
 class ZabbixConnection:
-    """Параметры подключения к Zabbix API."""
-
     api_url: str
     username: str
     password: str
@@ -42,124 +89,12 @@ class ZabbixConnection:
 
 @dataclass
 class GrafanaConnection:
-    """Параметры подключения к Grafana HTTP API."""
-
     base_url: str
     username: str
     password: str
-    token: str
 
 
-@dataclass
-class TagNamesCfg:
-    """Имена тегов, по которым строятся новые хост-группы и AS-разбиение."""
-
-    AS: str = "AS"
-    ASN: str = "ASN"
-    ENV: str = "ENV"
-    GAS: str = "GAS"
-    GUEST_NAME: str = "GUEST-NAME"
-
-
-@dataclass
-class UnknownRules:
-    """Что считаем UNKNOWN/шумом."""
-
-    unknown_tag_value: str = "UNKNOWN"  # если AS==UNKNOWN или ASN==UNKNOWN
-    unknown_group_name: str = "UNKNOWN"  # если хост состоит в группе с таким именем
-    exclude_unknown_from_stats: bool = True  # True = не участвуют в эталоне
-
-
-@dataclass
-class MappingRules:
-    """Пороги для эталона.
-
-    Примечание: правила NEW/OLD для эталона задаются в основном скрипте.
-    Исключения групп — в Runtime.excluded_group_patterns.
-    """
-
-    # Эталон: сколько кандидатов сохраняем для каждой new-группы
-    top_n_candidates: int = 5
-
-    # Отсечение мусора
-    min_intersection: int = 2  # минимум общих хостов
-    min_precision: float = 0.20  # intersection / hosts_in_new
-
-    # ENV-политика: PROD/NONPROD считаем истинной по тегу ENV.
-    # Если пары old/new явно противоречат по среде (PROD<->NONPROD и т.п.) — их надо ЗАПРЕЩАТЬ.
-    forbid_env_mismatch: bool = True
-
-    # Известные значения ENV (можно расширять)
-    env_tokens: tuple[str, ...] = ("PROD", "NONPROD", "DEV", "STAGE", "TEST", "UAT", "PREPROD")
-
-
-@dataclass
-class ExcelOutput:
-    """Параметры Excel-отчёта."""
-
-    output_xlsx: str = "hostgroup_mapping_audit.xlsx"
-    sheet_name_max: int = 31
-    sheet_unknown: str = "UNKNOWN_HOSTS"
-    sheet_mapping: str = "MAPPING"  # сводная таблица OLD->NEW
-    sheet_grafana: str = "GRAFANA"  # опциональный общий лист (если нужен)
-    max_sheets_per_workbook: int = 200
-    migration_plan_path: Optional[str] = None  # если None, путь строится от output_xlsx
-
-
-@dataclass
-class Runtime:
-    """Параметры выполнения."""
-
-    monitored_hosts_only: bool = True
-    http_timeout_sec: int = 90
-    limit_as: Optional[int] = None  # для тестового прогона, например 20
-    create_backup_on_audit: bool = False
-    audit_scope_as: tuple[str, ...] = ("dom_itmon",)  # список AS для scoped-скриптов
-    enable_grafana_audit: bool = True
-    save_zabbix_seed_on_audit: bool = True
-    zabbix_seed_path: Optional[str] = None  # если None, путь строится от output_xlsx
-
-    # Исключённые группы (regex): не участвуют в обработке
-    # Для точного имени используйте якоря ^...$
-    excluded_group_patterns: tuple[str, ...] = (
-        # Точное имя / сервисная группа
-        r"^Maintenance-dc-enable$",
-
-        # Всё служебное Maintenance-*
-        r"^Maintenance-",
-
-        # OS/guest-name legacy-группы (чтобы не попадали в эталон)
-        r"^(BNK|DOM)-(LINUX|WINDOWS)(-|$)",
-
-        # БД/PG группы (если их не нужно учитывать как AS)
-        r"^(BNK|DOM)-(POSTGRES|POSTGRESQL|PG)(-|$)",
-    )
-
-
-@dataclass
-class Config:
-    """Единый объект конфигурации."""
-
-    tags: TagNamesCfg = field(default_factory=TagNamesCfg)
-    unknown: UnknownRules = field(default_factory=UnknownRules)
-    mapping: MappingRules = field(default_factory=MappingRules)
-    excel: ExcelOutput = field(default_factory=ExcelOutput)
-    runtime: Runtime = field(default_factory=Runtime)
-    # Grafana параметры читаем отдельной функцией (token лучше не хранить в CONFIG)
-
-
-def load_connection_from_env_or_prompt(interactive: bool = True) -> ZabbixConnection:
-    """Возвращает параметры подключения.
-
-    Сейчас (локальный запуск) берём URL/логин/пароль ТОЛЬКО из переменных модуля:
-      - ZBX_URL
-      - ZBX_USER
-      - ZBX_PASSWORD
-
-    Никаких env и интерактивного ввода.
-    Параметр `interactive` оставлен только для совместимости сигнатуры.
-    """
-
+def load_zabbix_connection() -> ZabbixConnection:
     return ZabbixConnection(
         api_url=(ZBX_URL or "").strip(),
         username=(ZBX_USER or "").strip(),
@@ -167,23 +102,9 @@ def load_connection_from_env_or_prompt(interactive: bool = True) -> ZabbixConnec
     )
 
 
-def load_grafana_from_module() -> GrafanaConnection:
-    """Возвращает параметры Grafana.
-
-    Сейчас (локальный запуск) берём ТОЛЬКО из переменных модуля:
-      - GRAFANA_URL
-      - GRAFANA_USER
-      - GRAFANA_PASSWORD
-      - GRAFANA_TOKEN (опционально)
-    """
-
+def load_grafana_connection() -> GrafanaConnection:
     return GrafanaConnection(
         base_url=(GRAFANA_URL or "").strip(),
         username=(GRAFANA_USER or "").strip(),
         password=(GRAFANA_PASSWORD or ""),
-        token=(GRAFANA_TOKEN or "").strip(),
     )
-
-
-# ЕДИНАЯ ТОЧКА ДЛЯ ИЗМЕНЕНИЯ ПАРАМЕТРОВ
-CONFIG = Config()

@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""backup_model.py — модели бэкапа Zabbix для быстрого отката."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -11,14 +7,25 @@ from typing import Any, Dict, List
 @dataclass
 class BackupMeta:
     created_at: str
-    scope_as: List[str] = field(default_factory=list)
+    version: str = "2.0"
+    impact_plan_path: str = ""
     zabbix_url: str = ""
-    version: str = "1.0"
+    scope_as: List[str] = field(default_factory=list)
+    scope_env: str = ""
+
+
+@dataclass
+class HostGroupBackup:
+    groupid: str
+    name: str = ""
+    kind: str = ""
+    raw: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class HostBackup:
     hostid: str
+    raw: Dict[str, Any] = field(default_factory=dict)
     groups: List[Dict[str, Any]] = field(default_factory=list)
     tags: List[Dict[str, Any]] = field(default_factory=list)
 
@@ -27,10 +34,6 @@ class HostBackup:
 class ActionBackup:
     actionid: str
     raw: Dict[str, Any] = field(default_factory=dict)
-    filter: Dict[str, Any] = field(default_factory=dict)
-    operations: List[Dict[str, Any]] = field(default_factory=list)
-    recovery_operations: List[Dict[str, Any]] = field(default_factory=list)
-    update_operations: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -38,9 +41,6 @@ class UserGroupBackup:
     usrgrpid: str
     name: str = ""
     raw: Dict[str, Any] = field(default_factory=dict)
-    users: List[Dict[str, Any]] = field(default_factory=list)
-    hostgroup_rights: List[Dict[str, Any]] = field(default_factory=list)
-    tag_filters: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -50,14 +50,22 @@ class UserBackup:
     name: str = ""
     surname: str = ""
     raw: Dict[str, Any] = field(default_factory=dict)
-    medias: List[Dict[str, Any]] = field(default_factory=list)
-    usrgrps: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class MaintenanceBackup:
+    maintenanceid: str
+    name: str = ""
+    raw: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class BackupData:
     meta: BackupMeta
+    impact_plan: Dict[str, Any] = field(default_factory=dict)
+    hostgroups: List[HostGroupBackup] = field(default_factory=list)
     hosts: List[HostBackup] = field(default_factory=list)
     actions: List[ActionBackup] = field(default_factory=list)
     usergroups: List[UserGroupBackup] = field(default_factory=list)
     users: List[UserBackup] = field(default_factory=list)
+    maintenances: List[MaintenanceBackup] = field(default_factory=list)

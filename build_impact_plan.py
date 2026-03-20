@@ -19,9 +19,9 @@ def main() -> int:
     audit_json_path = str(config.SOURCE_AUDIT_JSON or "").strip()
     mapping_plan_path = str(config.SOURCE_MAPPING_PLAN_XLSX or "").strip()
     if not audit_json_path:
-        raise RuntimeError("Set v2/config.py SOURCE_AUDIT_JSON before building impact plan.")
+        raise RuntimeError("Set SOURCE_AUDIT_JSON in config.py before building impact plan.")
     if not mapping_plan_path:
-        raise RuntimeError("Set v2/config.py SOURCE_MAPPING_PLAN_XLSX before building impact plan.")
+        raise RuntimeError("Set SOURCE_MAPPING_PLAN_XLSX in config.py before building impact plan.")
 
     audit_report = load_audit_report(audit_json_path)
     inventory = audit_report.get("inventory") or {}

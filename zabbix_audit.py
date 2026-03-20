@@ -615,7 +615,7 @@ def build_scope_report(
     scope_env_lower = {scope_env_value.lower()} if scope_env_value else set()
 
     if not scope_as_values:
-        raise RuntimeError("v2 audit scope is empty. Set v2/config.py SCOPE_AS.")
+        raise RuntimeError("Audit scope is empty. Set SCOPE_AS in config.py.")
 
     physical_patterns = _compile_patterns(config.PHYSICAL_HINT_PATTERNS)
     discovery_patterns = _compile_patterns(config.DISCOVERY_HINT_PATTERNS)

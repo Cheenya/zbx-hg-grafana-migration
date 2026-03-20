@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""api_clients.py — общие HTTP-клиенты для Zabbix/Grafana."""
+"""api_clients.py — HTTP-клиенты для текущего контура."""
 
 from __future__ import annotations
 
@@ -34,11 +34,11 @@ class ZabbixAPI:
             payload["auth"] = self.auth
 
         try:
-            r = requests.post(self.api_url, json=payload, timeout=self.timeout, verify=False)
-            r.raise_for_status()
-            data = r.json()
-        except Exception as e:
-            raise RuntimeError(f"Zabbix API error ({method}): {e}") from e
+            response = requests.post(self.api_url, json=payload, timeout=self.timeout, verify=False)
+            response.raise_for_status()
+            data = response.json()
+        except Exception as exc:
+            raise RuntimeError(f"Zabbix API error ({method}): {exc}") from exc
 
         if "error" in data:
             raise RuntimeError(f"Zabbix API error ({method}): {data['error']}")
@@ -56,17 +56,17 @@ class GrafanaAPI:
         base_url: str,
         username: str = "",
         password: str = "",
-        token: str = "",
+        org_id: int = 0,
         timeout_sec: int = 60,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = int(timeout_sec)
-        self.s = requests.Session()
-        if token:
-            self.s.headers.update({"Authorization": f"Bearer {token}"})
+        self.session = requests.Session()
         if username or password:
-            self.s.auth = (username, password)
-        self.s.headers.update({"Content-Type": "application/json", "Accept": "application/json"})
+            self.session.auth = (username, password)
+        self.session.headers.update({"Content-Type": "application/json", "Accept": "application/json"})
+        if int(org_id or 0) > 0:
+            self.session.headers.update({"X-Grafana-Org-Id": str(int(org_id))})
 
     def _request(
         self,
@@ -77,7 +77,7 @@ class GrafanaAPI:
     ) -> Any:
         url = f"{self.base_url}{path}"
         try:
-            r = self.s.request(
+            response = self.session.request(
                 method=method,
                 url=url,
                 params=params,
@@ -85,10 +85,10 @@ class GrafanaAPI:
                 timeout=self.timeout,
                 verify=False,
             )
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            raise RuntimeError(f"Grafana API error ({method} {path}): {e}") from e
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:
+            raise RuntimeError(f"Grafana API error ({method} {path}): {exc}") from exc
 
     def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         return self._request("GET", path, params=params)
@@ -97,17 +97,18 @@ class GrafanaAPI:
         return self._request("POST", path, payload=payload)
 
     def list_dashboards(self) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
-        page, limit = 1, 500
+        dashboards: List[Dict[str, Any]] = []
+        page = 1
+        limit = 500
         while True:
             chunk = self.get("/api/search", params={"type": "dash-db", "limit": limit, "page": page})
             if not chunk:
                 break
-            out.extend(chunk)
+            dashboards.extend(chunk)
             if len(chunk) < limit:
                 break
             page += 1
-        return out
+        return dashboards
 
     def get_dashboard_by_uid(self, uid: str) -> Dict[str, Any]:
         return self.get(f"/api/dashboards/uid/{uid}")

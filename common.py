@@ -148,7 +148,7 @@ def resolve_scope_org_pairs(scope_as: Sequence[str], orgids: Sequence[int]) -> L
     if len(normalized_orgids) == 1:
         return [(as_value, normalized_orgids[0]) for as_value in as_values]
     if len(normalized_orgids) != len(as_values):
-        raise RuntimeError("v2/config.py GRAFANA_ORGIDS must be empty, one value, or match SCOPE_AS length.")
+        raise RuntimeError("config.py GRAFANA_ORGIDS must be empty, one value, or match SCOPE_AS length.")
     return list(zip(as_values, normalized_orgids))
 
 

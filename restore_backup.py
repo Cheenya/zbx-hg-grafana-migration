@@ -1,23 +1,14 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""restore_backup.py — откат Zabbix из бэкапа."""
-
 from __future__ import annotations
 
-import argparse
-from typing import Any, Dict
+from typing import Any, Dict, Set
 
-import urllib3  # type: ignore
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
+import config
 from api_clients import ZabbixAPI
 from backup_io import load_backup
-from config import CONFIG, load_connection_from_env_or_prompt
 
 
-def _filter_keys(data: Dict[str, Any], allowed: set) -> Dict[str, Any]:
-    return {k: v for k, v in (data or {}).items() if k in allowed}
+def _filter_keys(data: Dict[str, Any], allowed: Set[str]) -> Dict[str, Any]:
+    return {key: value for key, value in (data or {}).items() if key in allowed}
 
 
 def restore_backup(api: ZabbixAPI, backup_path: str) -> None:
@@ -69,76 +60,61 @@ def restore_backup(api: ZabbixAPI, backup_path: str) -> None:
         "rows_per_page",
         "url",
     }
+    maintenance_allowed = {
+        "name",
+        "description",
+        "maintenance_type",
+        "active_since",
+        "active_till",
+        "timeperiods",
+        "tags_evaltype",
+        "tags",
+        "groups",
+        "hosts",
+    }
 
-    # 1) Пользователи
-    for u in data.users:
-        payload: Dict[str, Any] = {"userid": u.userid}
-        if u.raw:
-            payload.update(_filter_keys(u.raw, user_allowed))
-        else:
-            if u.username:
-                payload["username"] = u.username
-            payload["name"] = u.name
-            payload["surname"] = u.surname
-            payload["usrgrps"] = u.usrgrps
-            payload["medias"] = u.medias
+    for user in data.users:
+        payload: Dict[str, Any] = {"userid": user.userid}
+        payload.update(_filter_keys(user.raw, user_allowed))
         api.call("user.update", payload)
 
-    # 2) Группы пользователей
-    for ug in data.usergroups:
-        payload = {"usrgrpid": ug.usrgrpid}
-        if ug.raw:
-            payload.update(_filter_keys(ug.raw, usergroup_allowed))
-        else:
-            payload.update(
-                {
-                    "name": ug.name,
-                    "users": ug.users,
-                    "hostgroup_rights": ug.hostgroup_rights,
-                    "tag_filters": ug.tag_filters,
-                }
-            )
+    for usergroup in data.usergroups:
+        payload: Dict[str, Any] = {"usrgrpid": usergroup.usrgrpid}
+        payload.update(_filter_keys(usergroup.raw, usergroup_allowed))
         api.call("usergroup.update", payload)
 
-    # 3) Действия
-    for a in data.actions:
-        payload = {"actionid": a.actionid}
-        if a.raw:
-            payload.update(_filter_keys(a.raw, action_allowed))
-        else:
-            payload.update(
-                {
-                    "filter": a.filter,
-                    "operations": a.operations,
-                    "recovery_operations": a.recovery_operations,
-                    "update_operations": a.update_operations,
-                }
-            )
+    for action in data.actions:
+        payload: Dict[str, Any] = {"actionid": action.actionid}
+        payload.update(_filter_keys(action.raw, action_allowed))
         api.call("action.update", payload)
 
-    # 4) Хосты
-    for h in data.hosts:
+    for maintenance in data.maintenances:
+        payload: Dict[str, Any] = {"maintenanceid": maintenance.maintenanceid}
+        payload.update(_filter_keys(maintenance.raw, maintenance_allowed))
+        api.call("maintenance.update", payload)
+
+    for host in data.hosts:
         groups = []
-        for g in h.groups:
-            gid = g.get("groupid")
-            if gid is not None:
-                groups.append({"groupid": str(gid)})
-        payload = {"hostid": h.hostid, "groups": groups, "tags": h.tags}
+        for group in host.groups:
+            groupid = group.get("groupid")
+            if groupid is not None:
+                groups.append({"groupid": str(groupid)})
+        payload = {"hostid": host.hostid, "groups": groups, "tags": host.tags}
         api.call("host.update", payload)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Restore Zabbix from backup")
-    parser.add_argument("backup", help="Backup file (.json or .json.gz)")
-    args = parser.parse_args()
+    backup_path = str(config.SOURCE_BACKUP_FILE or "").strip()
+    if not backup_path:
+        raise RuntimeError("Set SOURCE_BACKUP_FILE in config.py before restore.")
 
-    conn = load_connection_from_env_or_prompt(interactive=False)
-    api = ZabbixAPI(conn.api_url, timeout_sec=int(CONFIG.runtime.http_timeout_sec))
-    api.login(conn.username, conn.password)
+    connection = config.load_zabbix_connection()
+    api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
+    api.login(connection.username, connection.password)
 
-    print(f"Restoring backup: {args.backup}")
-    restore_backup(api, args.backup)
-    print("OK")
+    print(f"Restoring backup: {backup_path}")
+    restore_backup(api, backup_path)
+    print("Restore completed.")
     return 0
 
 

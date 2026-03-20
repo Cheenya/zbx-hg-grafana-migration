@@ -33,9 +33,9 @@ def main() -> int:
     impact_plan_path = str(config.SOURCE_IMPACT_PLAN_JSON or "").strip()
     backup_path = str(config.SOURCE_BACKUP_FILE or "").strip()
     if not impact_plan_path:
-        raise RuntimeError("Set v2/config.py SOURCE_IMPACT_PLAN_JSON before verify.")
+        raise RuntimeError("Set SOURCE_IMPACT_PLAN_JSON in config.py before verify.")
     if not backup_path:
-        raise RuntimeError("Set v2/config.py SOURCE_BACKUP_FILE before verify.")
+        raise RuntimeError("Set SOURCE_BACKUP_FILE in config.py before verify.")
 
     raw_impact_plan = load_impact_plan(impact_plan_path)
     summary = raw_impact_plan.get("summary") or {}

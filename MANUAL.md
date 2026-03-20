@@ -1,8 +1,8 @@
-# v2 MANUAL
+# MANUAL
 
 ## 1. Назначение
 
-`v2/` — это новый отдельный контур подготовки миграции.
+Это основной контур подготовки миграции.
 
 Его задача сейчас:
 - честно собрать read-only аудит;
@@ -12,7 +12,7 @@
 - проверить backup;
 - уметь сделать restore.
 
-На текущем этапе `v2`:
+На текущем этапе контур:
 - ничего не меняет в Zabbix;
 - ничего не меняет в Grafana;
 - не выполняет саму миграцию.
@@ -21,11 +21,11 @@
 ## 2. Точки входа
 
 ```bash
-python v2/audit_scope.py
-python v2/build_impact_plan.py
-python v2/make_backup.py
-python v2/verify_backup.py
-python v2/restore_backup.py
+python audit_scope.py
+python build_impact_plan.py
+python make_backup.py
+python verify_backup.py
+python restore_backup.py
 ```
 
 Назначение:
@@ -38,7 +38,7 @@ python v2/restore_backup.py
 
 ## 3. Что лежит в каталоге
 
-- `config.py` — единый конфиг `v2`;
+- `config.py` — единый конфиг;
 - `api_clients.py` — HTTP-клиенты для Zabbix/Grafana;
 - `common.py` — общие утилиты и генерация путей артефактов;
 - `zabbix_audit.py` — read-only аудит Zabbix;
@@ -51,7 +51,7 @@ python v2/restore_backup.py
 - `MANUAL.md` — этот документ.
 
 
-## 4. Что настраивается в `v2/config.py`
+## 4. Что настраивается в `config.py`
 
 ### 4.1. Подключение к Zabbix
 
@@ -67,9 +67,14 @@ ZBX_PASSWORD = ""
 GRAFANA_URL = ""
 GRAFANA_USER = ""
 GRAFANA_PASSWORD = ""
+GRAFANA_ORGIDS = ()
 ```
 
-В `v2` Grafana сейчас работает по логину/паролю.
+Grafana сейчас работает по логину/паролю.
+`GRAFANA_ORGIDS`:
+- пусто — org header не передаётся;
+- одно значение — один `orgId` для всех `SCOPE_AS`;
+- несколько значений — должны идти в том же порядке, что и `SCOPE_AS`.
 
 ### 4.3. Scope
 
@@ -202,11 +207,13 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - выделяет `UNKNOWN_HOSTS`;
 - строит `HOSTS`, `GROUPS_OLD`, `GROUPS_NEW`;
 - строит `MAPPING_PLAN` с кандидатами `OLD -> NEW`;
-- подтягивает Grafana matches;
+- строит `HOST_ENRICHMENT`;
+- подтягивает Grafana matches только по `OLD`-группам;
 - пишет:
   - audit workbook;
   - audit json;
-  - отдельный `mapping_plan.xlsx`.
+  - отдельный `mapping_plan.xlsx`;
+  - отдельный Grafana workbook.
 
 ### 5.1. Артефакты аудита
 
@@ -214,6 +221,7 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - `scope_audit_v2_<scope>_<timestamp>.xlsx`
 - `scope_audit_v2_<scope>_<timestamp>.json`
 - `mapping_plan_v2_<scope>_<timestamp>.xlsx`
+- `grafana_audit_v2_<scope>_<timestamp>.xlsx`
 
 ### 5.2. Листы audit workbook
 
@@ -227,6 +235,25 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - основные хосты scope;
 - показывает `AS`, `ASN`, `GAS`, `GUEST_NAME`, `ENV_RAW`, `ENV_SCOPE`.
 
+`HOSTS_OLD_SCOPE`
+- хосты, где есть `OLD`-группы scoped AS.
+
+`HOSTS_NO_ANY_NEW`
+- хосты с `OLD`-группами, но без единой `NEW`-группы scoped AS.
+
+`HOST_ENRICHMENT`
+- хосты и предполагаемое насыщение;
+- показывает `TARGET_ENV_SCOPE`, `TARGET_GAS`, `suggested_pairs`, `suggested_new_groups`, `missing_new_groups`.
+
+`HOSTS_DISABLED`
+- выключенные хосты в scope.
+
+`HOSTS_PHYSICAL`
+- хосты, похожие на физические, по эвристикам из `config.py`.
+
+`HOSTS_DISCOVERY`
+- discovery-похожие хосты по эвристикам из `config.py`.
+
 `HOSTS_SKIPPED_ENV`
 - хосты выбранной AS, исключённые по `SCOPE_ENV`.
 
@@ -239,6 +266,9 @@ MAPPING_FORBID_ENV_MISMATCH = True
 `MAPPING_PLAN`
 - кандидаты `OLD -> NEW`.
 
+`ZBX_MAP_PREVIEW`
+- предварительный список, какие `action` / `usergroup` / `maintenance` потенциально затронет выбранный mapping.
+
 `ACTIONS`
 - actions, где используются scope-группы.
 
@@ -248,11 +278,15 @@ MAPPING_FORBID_ENV_MISMATCH = True
 `MAINTENANCES`
 - maintenances, где используются scope-группы.
 
-`GRAFANA`
-- exact/pattern matches из dashboards.
+`GRAFANA_SUMMARY`
+- сводка по dashboard-совпадениям.
 
 `INVENTORY`
 - технический блок audit scope.
+
+Отдельный workbook Grafana:
+- `DASHBOARDS`
+- `DETAILS`
 
 
 ## 6. Как читать `MAPPING_PLAN`
@@ -385,7 +419,7 @@ Grafana в backup не входит.
 
 ### Шаг 1. Audit
 
-В `v2/config.py`:
+В `config.py`:
 
 ```python
 SCOPE_AS = ("your_as",)
@@ -395,7 +429,7 @@ SCOPE_ENV = "NONPROD"
 Запуск:
 
 ```bash
-python v2/audit_scope.py
+python audit_scope.py
 ```
 
 ### Шаг 2. Ручная проверка
@@ -421,7 +455,7 @@ selected = yes
 
 ### Шаг 4. Build impact plan
 
-В `v2/config.py` указать:
+В `config.py` указать:
 
 ```python
 SOURCE_AUDIT_JSON = r"v2_output\\scope_audit_v2_....json"
@@ -431,12 +465,12 @@ SOURCE_MAPPING_PLAN_XLSX = r"v2_output\\mapping_plan_v2_....xlsx"
 Запуск:
 
 ```bash
-python v2/build_impact_plan.py
+python build_impact_plan.py
 ```
 
 ### Шаг 5. Build backup
 
-В `v2/config.py` указать:
+В `config.py` указать:
 
 ```python
 SOURCE_IMPACT_PLAN_JSON = r"v2_output\\impact_plan_v2_....json"
@@ -445,12 +479,12 @@ SOURCE_IMPACT_PLAN_JSON = r"v2_output\\impact_plan_v2_....json"
 Запуск:
 
 ```bash
-python v2/make_backup.py
+python make_backup.py
 ```
 
 ### Шаг 6. Verify backup
 
-В `v2/config.py` указать:
+В `config.py` указать:
 
 ```python
 SOURCE_BACKUP_FILE = r"v2_output\\scope_backup_v2_....json.gz"
@@ -459,7 +493,7 @@ SOURCE_BACKUP_FILE = r"v2_output\\scope_backup_v2_....json.gz"
 Запуск:
 
 ```bash
-python v2/verify_backup.py
+python verify_backup.py
 ```
 
 ### Шаг 7. Restore test
@@ -467,7 +501,7 @@ python v2/verify_backup.py
 На pilot-контуре:
 
 ```bash
-python v2/restore_backup.py
+python restore_backup.py
 ```
 
 Только после успешного цикла:
@@ -478,12 +512,12 @@ python v2/restore_backup.py
 - verify
 - restore test
 
-можно переходить к будущему `migrate v2`.
+можно переходить к будущему `migrate`.
 
 
 ## 12. Ограничения текущей версии
 
-`v2` пока не делает:
+Контур пока не делает:
 - собственно миграцию;
 - postcheck после миграции;
 - автоматический rewrite Grafana dashboards;

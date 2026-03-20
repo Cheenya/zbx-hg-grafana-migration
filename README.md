@@ -1,205 +1,94 @@
-# Zabbix / Grafana Host-Group Migration Toolkit
+# Safe Prep Flow
 
-Набор скриптов для аудита и подготовки миграции host-groups из OLD формата `(BNK|DOM)-...` в NEW `(BNK|DOM)/AS/<AS>/...` в Zabbix 7.0+ и связанных упоминаний в Grafana.
+Подробный документ:
+- `MANUAL.md`
 
-Проект ориентирован на **локальный запуск**, **без интерактива**, с **отключенной проверкой TLS** и чтением секретов **из `config.py`**.
+Это основной контур подготовки миграции.
 
-Новый упрощенный read-only контур лежит в каталоге `v2/`. Он не меняет Zabbix/Grafana и предназначен для безопасной переоценки scope перед новым `backup v2` и `migrate v2`.
+Что уже есть:
+- `python audit_scope.py` — read-only аудит Zabbix/Grafana;
+- `python build_impact_plan.py` — сбор change-scope по подтверждённому `mapping_plan.xlsx`;
+- `python make_backup.py` — backup строго по `impact_plan.json`;
+- `python verify_backup.py` — проверка backup против `impact_plan.json`;
+- `python restore_backup.py` — откат Zabbix из backup.
 
----
+Что делает аудит:
+- читает Zabbix без изменений;
+- берёт scope по `SCOPE_AS` и опционально по каноническому `SCOPE_ENV`;
+- опционально маппит `SCOPE_AS` на `GRAFANA_ORGIDS`;
+- учитывает `AS`, `ASN`, `ENV`, `GAS`, `GUEST-NAME`;
+- отдельно показывает `UNKNOWN`-хосты;
+- строит `MAPPING_PLAN` c кандидатами `OLD -> NEW`;
+- строит `HOST_ENRICHMENT` по хостам;
+- ищет только `OLD`-группы в Grafana dashboards;
+- сохраняет:
+  - `scope_audit_v2_*.xlsx`
+  - `scope_audit_v2_*.json`
+  - `mapping_plan_v2_*.xlsx`
+  - `grafana_audit_v2_*.xlsx`
 
-## Основные принципы
+Что делает `build_impact_plan.py`:
+- читает `SOURCE_AUDIT_JSON`;
+- читает `SOURCE_MAPPING_PLAN_XLSX`;
+- берёт только строки, где в `mapping_plan.xlsx` стоит `selected=yes`;
+- строит:
+  - точные change points в Zabbix;
+  - exact/pattern impact по Grafana;
+  - `backup_scope` для backup/restore;
+- сохраняет:
+  - `impact_plan_v2_*.xlsx`
+  - `impact_plan_v2_*.json`
 
-- **Zabbix 7.0+ JSON-RPC**: авторизация по username/password.
-- **Grafana HTTP API**: только чтение (логин/пароль; token опционально), поиск упоминаний групп в JSON dashboards.
-- **No env / no prompt**: все параметры и секреты задаются в `config.py`.
-- **verify=False везде** + подавление `InsecureRequestWarning`.
-- **Предсказуемость**: ошибки API выбрасывают `RuntimeError` (без «самолечения»).
-- **ENV политика**: среда берётся из тега `ENV`, несоответствия помечаются в отчёте.
-- **UNKNOWN-хосты**: отдельный лист отчёта (AS/ASN/группа UNKNOWN/отсутствие AS).
+Что делает `make_backup.py`:
+- читает `SOURCE_IMPACT_PLAN_JSON`;
+- забирает из Zabbix сущности только из `backup_scope`;
+- сохраняет backup в `scope_backup_v2_*.json.gz`;
+- падает, если coverage неполный.
 
----
+Что делает `verify_backup.py`:
+- читает `SOURCE_IMPACT_PLAN_JSON` и `SOURCE_BACKUP_FILE`;
+- сверяет scope и набор ID между impact plan и backup;
+- падает, если есть missing/extra объекты.
 
-## Файлы и назначение
+Что делает `restore_backup.py`:
+- читает `SOURCE_BACKUP_FILE`;
+- откатывает Zabbix в порядке:
+  - users
+  - usergroups
+  - actions
+  - maintenances
+  - hosts
 
-### Аудит Zabbix + Grafana
-- `zbx_hg_mapping_audit.py`
-  - Основной аудит: эталон NEW↔OLD, outliers, actions, rights, media.
-  - Опционально: Grafana‑поиск (если включено в конфиге).
-  - Опционально: автосоздание бэкапа.
-  - Сохраняет seed для Grafana‑only отчёта.
+Логика `ENV`:
+- `PROD` -> `PROD`
+- любое другое непустое значение -> `NONPROD`
 
-### Аудит по списку AS
-- `audit_scope.py`
-  - Аудит Zabbix + Grafana только по заданным AS.
-  - Выводит один XLSX на запуск.
+Что важно:
+- Grafana сейчас работает по логину/паролю;
+- контур пока не применяет миграцию;
+- контур пока только готовит и проверяет change-scope.
 
-### Grafana‑only аудит (без Zabbix)
-- `grafana_only_audit.py`
-  - Работает от seed JSON (из `zbx_hg_mapping_audit.py`).
-  - Пишет XLSX со стилем основного отчёта.
+Формат scope:
+- одна AS: `SCOPE_AS = ("dom_itmon",)`
+- несколько AS: `SCOPE_AS = ("dom_itmon", "risk_calc")`
+- одна org на все AS: `GRAFANA_ORGIDS = (17,)`
+- org по позиции: `GRAFANA_ORGIDS = (17, 23)`
+- все env: `SCOPE_ENV = ""`
+- только nonprod: `SCOPE_ENV = "NONPROD"`
+- только prod: `SCOPE_ENV = "PROD"`
 
-### Бэкап и откат
-- `make_backup.py`
-  - Создание бэкапа Zabbix.
-  - Бэкап **только по AS‑scope** (без scope запуск запрещён).
-  - Формат: один JSON или JSON.GZ.
-- `restore_backup.py`
-  - Восстановление из бэкапа.
-  - Восстанавливает users → usergroups → actions → hosts.
-- `backup_model.py` / `backup_io.py`
-  - Модели данных + save/load.
-
-### Общие модули (рефакторинг)
-- `api_clients.py`
-  - Единые HTTP-клиенты: `ZabbixAPI`, `GrafanaAPI`.
-  - Используются в audit/backup/restore/migrate/ENV detector.
-- `scope_utils.py`
-  - Нормализация AS-scope и генерация безопасных имён файлов по scope.
-- `artifact_paths.py`
-  - Единая генерация путей `*_zbx_seed.json` и `*_migration_plan.json`.
-
-### Конфигурация
-- `config.py`
-  - Все параметры/секреты/флаги выполнения.
-
-### Миграция (точечно по одной AS)
-- `migrate_single_as.py`
-  - Использует план миграции (`*_migration_plan.json`), а при его отсутствии — `MAPPING` из Excel.
-  - **Хосты:** удаляет OLD‑группы, **NEW‑группы не добавляет** (считаются уже существующими).
-  - **Actions:** заменяет groupid в условиях и операциях.
-  - **User groups:** заменяет groupid в `hostgroup_rights`.
-  - **Maintenance:** заменяет groupid в `groups`.
-  - **Grafana:** заменяет OLD‑группы в строковых полях JSON dashboards.
-
----
-
-## Конфиг (`config.py`)
-
-Ключевые параметры:
-
-```python
-# Zabbix
-ZBX_URL = "https://zabbix.example/api_jsonrpc.php"
-ZBX_USER = "login"
-ZBX_PASSWORD = "password"
-
-# Grafana
-GRAFANA_URL = "https://grafana.example"
-GRAFANA_USER = "login"
-GRAFANA_PASSWORD = "password"
-GRAFANA_TOKEN = ""  # опционально
-
-# Runtime
-CONFIG.runtime.enable_grafana_audit = True
-CONFIG.runtime.create_backup_on_audit = False
-CONFIG.runtime.save_zabbix_seed_on_audit = True
-CONFIG.runtime.zabbix_seed_path = None  # авто: <output_xlsx>_zbx_seed.json
-```
-
-Также есть параметры:
-- `excluded_group_patterns` — regex исключений групп.
-- `mapping` — пороги эталона.
-- `excel` — имя файла и лимит листов.
-- `runtime.audit_scope_as` — **обязательный** список AS для `audit_scope.py`, `make_backup.py`, `grafana_only_audit.py`.
-
----
-
-## Форматы и правила
-
-### NEW host-groups
-`(BNK|DOM)/AS/<AS>/...`
-- `<AS>` сравнивается **case-insensitive**.
-
-### OLD host-groups
-`(BNK|DOM)-...`
-- без `/`.
-
-### UNKNOWN
-- AS == `UNKNOWN` или ASN == `UNKNOWN` или группа `UNKNOWN` или AS отсутствует.
-
-### ENV политика
-- Тег `ENV` используется для подсветки несовпадений.
-- В отчёте выводится `env_mismatch`.
-
----
-
-## Запуск
-
-### 1) Полный аудит (Zabbix + Grafana)
-```bash
-python zbx_hg_mapping_audit.py
-```
-
-### 2) Аудит по AS
-```bash
-python audit_scope.py
-```
-
-### 3) Grafana‑only аудит
-```bash
-python grafana_only_audit.py --seed hostgroup_mapping_audit_zbx_seed.json
-```
-
-### 4) Бэкап
-```bash
-python make_backup.py
-# или с именем файла
-python make_backup.py --out my_backup.json.gz
-```
-
-### 5) Восстановление
-```bash
-python restore_backup.py path/to/backup.json.gz
-```
-
-### 6) Миграция (одна AS)
-```bash
-# Перед запуском выставьте AS_VALUE и DRY_RUN_* внутри migrate_single_as.py
-python migrate_single_as.py
-```
-
----
-
-## Выходные файлы
-
-- XLSX (аудиты) — `CONFIG.excel.output_xlsx` (+ `_partNNN` при большом числе AS)
-- Seed — `<output_xlsx>_zbx_seed.json` (если включено)
-- План миграции — `<output_xlsx>_migration_plan.json`
-- Бэкап — `zbx_backup_<scope>_<timestamp>.json.gz`
-
----
-
-## Ограничения и нюансы
-
-- Grafana‑поиск ищет **точные упоминания** известных групп из Zabbix.
-- Дополнительно выводятся **шаблоны/переменные/регэкспы** с `match_type = OLD_PATTERN/NEW_PATTERN`.
-- При `enable_grafana_audit=True` Grafana‑ошибки **не останавливают** Zabbix‑аудит (пишется предупреждение).
-- Бэкап хранит `raw` объекты (полный снимок); restore применяет whitelist ключей.
-- Миграция предполагает, что NEW‑группы **уже есть** на хостах; она удаляет только OLD‑группы.
-
----
-
-## Минимальные зависимости
-
-```bash
-pip install requests openpyxl urllib3
-```
-
----
-
-## Рекомендованный поток работ
-
-1) Прогон аудита Zabbix → получить эталон и MAPPING.
-2) Grafana‑поиск (либо вместе, либо отдельно по seed).
-3) Проверить/отредактировать план миграции (`*_migration_plan.json`) — включить/исключить нужные пары.
-4) (При миграции) создать бэкап по AS‑scope.
-5) Выполнить изменения (`migrate_single_as.py`).
-6) При необходимости — откат через restore.
-
----
-
-## Безопасность
-
-- `verify=False` везде (текущая модель запуска — локальная, без TLS‑валидации).
-- Никаких env‑переменных и интерактива (только `config.py`).
+Минимальный поток:
+1. В `config.py` задать `SCOPE_AS` и при необходимости `SCOPE_ENV`.
+2. Запустить `python audit_scope.py`.
+3. Проверить `mapping_plan_v2_*.xlsx` и отметить нужные строки `selected=yes`.
+4. В `config.py` указать:
+   - `SOURCE_AUDIT_JSON`
+   - `SOURCE_MAPPING_PLAN_XLSX`
+5. Запустить `python build_impact_plan.py`.
+6. В `config.py` указать:
+   - `SOURCE_IMPACT_PLAN_JSON`
+7. Запустить `python make_backup.py`.
+8. В `config.py` указать:
+   - `SOURCE_BACKUP_FILE`
+9. Запустить `python verify_backup.py`.
+10. Только после этого идти к будущему `migrate`.

@@ -1,19 +1,16 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""backup_io.py — сохранение/загрузка бэкапа (JSON или .json.gz)."""
-
 from __future__ import annotations
 
 import gzip
 import json
 from dataclasses import asdict
-from typing import Any, Dict
 
 from backup_model import (
     ActionBackup,
     BackupData,
     BackupMeta,
     HostBackup,
+    HostGroupBackup,
+    MaintenanceBackup,
     UserBackup,
     UserGroupBackup,
 )
@@ -22,25 +19,36 @@ from backup_model import (
 def save_backup(data: BackupData, path: str) -> None:
     payload = asdict(data)
     if path.lower().endswith(".gz"):
-        with gzip.open(path, "wt", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-    else:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        return
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
 
 
 def load_backup(path: str) -> BackupData:
     if path.lower().endswith(".gz"):
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            raw = json.load(f)
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            raw = json.load(handle)
     else:
-        with open(path, "r", encoding="utf-8") as f:
-            raw = json.load(f)
+        with open(path, "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
 
-    meta = BackupMeta(**(raw.get("meta") or {}))
-    hosts = [HostBackup(**x) for x in (raw.get("hosts") or [])]
-    actions = [ActionBackup(**x) for x in (raw.get("actions") or [])]
-    usergroups = [UserGroupBackup(**x) for x in (raw.get("usergroups") or [])]
-    users = [UserBackup(**x) for x in (raw.get("users") or [])]
+    meta_raw = raw.get("meta") or {}
+    if "scope_env" not in meta_raw:
+        scope_envs = meta_raw.get("scope_envs") or []
+        if isinstance(scope_envs, list) and scope_envs:
+            meta_raw["scope_env"] = str(scope_envs[0] or "")
+        else:
+            meta_raw["scope_env"] = ""
 
-    return BackupData(meta=meta, hosts=hosts, actions=actions, usergroups=usergroups, users=users)
+    return BackupData(
+        meta=BackupMeta(**meta_raw),
+        impact_plan=raw.get("impact_plan") or raw.get("inventory") or {},
+        hostgroups=[HostGroupBackup(**item) for item in (raw.get("hostgroups") or [])],
+        hosts=[HostBackup(**item) for item in (raw.get("hosts") or [])],
+        actions=[ActionBackup(**item) for item in (raw.get("actions") or [])],
+        usergroups=[UserGroupBackup(**item) for item in (raw.get("usergroups") or [])],
+        users=[UserBackup(**item) for item in (raw.get("users") or [])],
+        maintenances=[MaintenanceBackup(**item) for item in (raw.get("maintenances") or [])],
+    )
