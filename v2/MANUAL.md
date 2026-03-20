@@ -20,12 +20,12 @@
 Точки входа:
 
 ```bash
-python -m v2.audit_scope
-python -m v2.make_backup
-python -m v2.verify_backup
+python v2/audit_scope.py
+python v2/make_backup.py
+python v2/verify_backup.py
 ```
 
-`python -m v2.audit_scope`
+`python v2/audit_scope.py`
 1. Подключается к Zabbix.
 2. Берет scope из `v2/config.py`.
 3. Собирает инвентаризацию:
@@ -43,7 +43,7 @@ python -m v2.verify_backup
    - `xlsx` отчет;
    - `json` inventory.
 
-`python -m v2.make_backup`
+`python v2/make_backup.py`
 1. Читает путь `SOURCE_INVENTORY_JSON` из `v2/config.py`.
 2. Загружает `json inventory`, созданный `audit_scope`.
 3. Достает из inventory точные ID сущностей:
@@ -57,7 +57,7 @@ python -m v2.verify_backup
 5. Проверяет полное покрытие inventory.
 6. Сохраняет backup в `json.gz`.
 
-`python -m v2.verify_backup`
+`python v2/verify_backup.py`
 1. Читает `SOURCE_INVENTORY_JSON`.
 2. Читает `SOURCE_BACKUP_FILE`.
 3. Сравнивает scope и наборы ID между inventory и backup.
@@ -174,13 +174,13 @@ SOURCE_BACKUP_FILE = ""
 ```
 
 `SOURCE_INVENTORY_JSON`
-- путь к `json`, который создал `python -m v2.audit_scope`;
-- обязателен для `python -m v2.make_backup`;
-- обязателен для `python -m v2.verify_backup`.
+- путь к `json`, который создал `python v2/audit_scope.py`;
+- обязателен для `python v2/make_backup.py`;
+- обязателен для `python v2/verify_backup.py`.
 
 `SOURCE_BACKUP_FILE`
-- путь к backup-файлу, который создал `python -m v2.make_backup`;
-- обязателен для `python -m v2.verify_backup`.
+- путь к backup-файлу, который создал `python v2/make_backup.py`;
+- обязателен для `python v2/verify_backup.py`.
 
 ### 4.6. Теги
 
@@ -244,13 +244,13 @@ Scope в `v2` определяется так:
 ### 6.1. Базовый запуск
 
 ```bash
-python -m v2.audit_scope
+python v2/audit_scope.py
 ```
 
 ### 6.2. С пользовательскими именами файлов
 
 ```bash
-python -m v2.audit_scope --out-xlsx my_scope.xlsx --out-json my_scope.json
+python v2/audit_scope.py --out-xlsx my_scope.xlsx --out-json my_scope.json
 ```
 
 ### 6.3. Рекомендуемый первый pilot
@@ -265,17 +265,17 @@ SCOPE_ENVS = ("NONPROD",)
 После этого:
 
 ```bash
-python -m v2.audit_scope
+python v2/audit_scope.py
 ```
 
 ### 6.4. Сбор backup по inventory
 
-1. Выполнить `python -m v2.audit_scope`.
+1. Выполнить `python v2/audit_scope.py`.
 2. Вписать путь к созданному `json` в `SOURCE_INVENTORY_JSON`.
 3. Запустить:
 
 ```bash
-python -m v2.make_backup
+python v2/make_backup.py
 ```
 
 ### 6.5. Проверка backup
@@ -284,7 +284,7 @@ python -m v2.make_backup
 2. Запустить:
 
 ```bash
-python -m v2.verify_backup
+python v2/verify_backup.py
 ```
 
 
@@ -581,7 +581,7 @@ SCOPE_ENVS = ("NONPROD",)
 Запуск:
 
 ```bash
-python -m v2.audit_scope
+python v2/audit_scope.py
 ```
 
 ### Шаг 2. Ручная проверка отчета
@@ -605,7 +605,7 @@ SOURCE_INVENTORY_JSON = r"v2_output\\scope_audit_v2_dom_itmon_NONPROD_20260320_1
 Запуск:
 
 ```bash
-python -m v2.make_backup
+python v2/make_backup.py
 ```
 
 ### Шаг 4. Verify backup v2
@@ -619,7 +619,7 @@ SOURCE_BACKUP_FILE = r"v2_output\\scope_backup_v2_dom_itmon_NONPROD_20260320_121
 Запуск:
 
 ```bash
-python -m v2.verify_backup
+python v2/verify_backup.py
 ```
 
 ### Шаг 5. Только потом проектировать migrate v2

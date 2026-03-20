@@ -5,36 +5,20 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Sequence
 
-try:
-    from . import config
-    from .api_clients import ZabbixAPI
-    from .backup_io import save_backup
-    from .backup_model import (
-        ActionBackup,
-        BackupData,
-        BackupMeta,
-        HostBackup,
-        HostGroupBackup,
-        MaintenanceBackup,
-        UserBackup,
-        UserGroupBackup,
-    )
-    from .common import build_scope_part, normalize_values
-except ImportError:
-    import config  # type: ignore
-    from api_clients import ZabbixAPI  # type: ignore
-    from backup_io import save_backup  # type: ignore
-    from backup_model import (  # type: ignore
-        ActionBackup,
-        BackupData,
-        BackupMeta,
-        HostBackup,
-        HostGroupBackup,
-        MaintenanceBackup,
-        UserBackup,
-        UserGroupBackup,
-    )
-    from common import build_scope_part, normalize_values  # type: ignore
+import config
+from api_clients import ZabbixAPI
+from backup_io import save_backup
+from backup_model import (
+    ActionBackup,
+    BackupData,
+    BackupMeta,
+    HostBackup,
+    HostGroupBackup,
+    MaintenanceBackup,
+    UserBackup,
+    UserGroupBackup,
+)
+from common import build_scope_part, normalize_values
 
 
 def load_inventory(path: str) -> Dict[str, Any]:

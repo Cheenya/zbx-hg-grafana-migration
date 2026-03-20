@@ -3,46 +3,25 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, List, Sequence, Set
 
-try:
-    from . import config
-    from .api_clients import ZabbixAPI
-    from .common import (
-        canonical_env_value,
-        extract_action_groupids,
-        extract_action_recipients,
-        extract_active_media_sendto,
-        get_tag_value,
-        is_excluded_group,
-        is_new_group_for_as,
-        is_old_group,
-        join_sorted,
-        normalize_lower_set,
-        normalize_scope_envs,
-        normalize_values,
-        resolve_tagfilter_tag,
-        resolve_tagfilter_value,
-        sample_host_names,
-    )
-except ImportError:
-    import config  # type: ignore
-    from api_clients import ZabbixAPI  # type: ignore
-    from common import (  # type: ignore
-        canonical_env_value,
-        extract_action_groupids,
-        extract_action_recipients,
-        extract_active_media_sendto,
-        get_tag_value,
-        is_excluded_group,
-        is_new_group_for_as,
-        is_old_group,
-        join_sorted,
-        normalize_lower_set,
-        normalize_scope_envs,
-        normalize_values,
-        resolve_tagfilter_tag,
-        resolve_tagfilter_value,
-        sample_host_names,
-    )
+import config
+from api_clients import ZabbixAPI
+from common import (
+    canonical_env_value,
+    extract_action_groupids,
+    extract_action_recipients,
+    extract_active_media_sendto,
+    get_tag_value,
+    is_excluded_group,
+    is_new_group_for_as,
+    is_old_group,
+    join_sorted,
+    normalize_lower_set,
+    normalize_scope_envs,
+    normalize_values,
+    resolve_tagfilter_tag,
+    resolve_tagfilter_value,
+    sample_host_names,
+)
 
 
 def fetch_hostgroups(api: ZabbixAPI) -> List[Dict[str, Any]]:

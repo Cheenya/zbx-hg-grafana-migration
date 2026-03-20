@@ -6,10 +6,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 
 from openpyxl import Workbook  # type: ignore
 
-try:
-    from .common import autosize_columns, safe_sheet_title
-except ImportError:
-    from common import autosize_columns, safe_sheet_title  # type: ignore
+from common import autosize_columns, safe_sheet_title
 
 
 def _append_rows(ws, rows: Sequence[Dict[str, Any]], headers: Sequence[str]) -> None:

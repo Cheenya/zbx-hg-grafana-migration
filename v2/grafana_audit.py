@@ -4,14 +4,9 @@ import re
 from collections import defaultdict
 from typing import Any, Dict, List, Sequence, Set, Tuple
 
-try:
-    from . import config
-    from .api_clients import GrafanaAPI
-    from .common import normalize_values
-except ImportError:
-    import config  # type: ignore
-    from api_clients import GrafanaAPI  # type: ignore
-    from common import normalize_values  # type: ignore
+import config
+from api_clients import GrafanaAPI
+from common import normalize_values
 
 
 OLD_RX = re.compile(r"(BNK|DOM)-[^\"\\]+")

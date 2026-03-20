@@ -2,20 +2,12 @@ from __future__ import annotations
 
 import argparse
 
-try:
-    from . import config
-    from .api_clients import ZabbixAPI
-    from .common import build_output_paths, normalize_values
-    from .grafana_audit import collect_grafana_rows
-    from .report_writer import save_inventory_json, write_workbook
-    from .zabbix_audit import build_scope_report
-except ImportError:
-    import config  # type: ignore
-    from api_clients import ZabbixAPI  # type: ignore
-    from common import build_output_paths, normalize_values  # type: ignore
-    from grafana_audit import collect_grafana_rows  # type: ignore
-    from report_writer import save_inventory_json, write_workbook  # type: ignore
-    from zabbix_audit import build_scope_report  # type: ignore
+import config
+from api_clients import ZabbixAPI
+from common import build_output_paths, normalize_values
+from grafana_audit import collect_grafana_rows
+from report_writer import save_inventory_json, write_workbook
+from zabbix_audit import build_scope_report
 
 
 def main() -> int:

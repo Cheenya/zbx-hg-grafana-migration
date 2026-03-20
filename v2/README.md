@@ -8,7 +8,7 @@
 - backup по готовому `json inventory`;
 - verify backup по тому же inventory.
 
-Что делает `python -m v2.audit_scope`:
+Что делает `python v2/audit_scope.py`:
 - читает Zabbix без изменений;
 - берет scope по AS из `v2/config.py`;
 - опционально режет выборку по каноническому `ENV` для pilot-прогонов;
@@ -16,13 +16,13 @@
 - отдельно ищет упоминания в Grafana dashboards;
 - сохраняет `xlsx` и `json` в каталог `v2_output/`.
 
-Что делает `python -m v2.make_backup`:
+Что делает `python v2/make_backup.py`:
 - читает `SOURCE_INVENTORY_JSON` из `v2/config.py`;
 - забирает из Zabbix все сущности по точным ID из inventory;
 - сохраняет backup в `json.gz` в каталог `v2_output/`;
 - падает с `RuntimeError`, если хотя бы часть inventory не покрыта backup.
 
-Что делает `python -m v2.verify_backup`:
+Что делает `python v2/verify_backup.py`:
 - читает `SOURCE_INVENTORY_JSON` и `SOURCE_BACKUP_FILE`;
 - сверяет scope и набор ID между inventory и backup;
 - падает с `RuntimeError`, если есть missing/extra объекты.
@@ -51,10 +51,10 @@
 Рекомендуемый pilot:
 1. В `v2/config.py` задать одну AS.
 2. Для первого прогона задать `SCOPE_ENVS = ("NONPROD",)`.
-3. Запустить `python -m v2.audit_scope`.
+3. Запустить `python v2/audit_scope.py`.
 4. Проверить `v2_output/*.xlsx` и `v2_output/*.json`.
 5. Прописать путь к JSON в `SOURCE_INVENTORY_JSON`.
-6. Запустить `python -m v2.make_backup`.
+6. Запустить `python v2/make_backup.py`.
 7. Прописать путь к backup в `SOURCE_BACKUP_FILE`.
-8. Запустить `python -m v2.verify_backup`.
+8. Запустить `python v2/verify_backup.py`.
 9. Только после этого переходить к будущему `migrate v2`.

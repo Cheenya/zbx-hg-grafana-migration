@@ -3,14 +3,9 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
-try:
-    from . import config
-    from .backup_io import load_backup
-    from .common import normalize_values
-except ImportError:
-    import config  # type: ignore
-    from backup_io import load_backup  # type: ignore
-    from common import normalize_values  # type: ignore
+import config
+from backup_io import load_backup
+from common import normalize_values
 
 
 def load_inventory(path: str) -> Dict[str, Any]:
