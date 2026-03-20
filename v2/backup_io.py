@@ -4,16 +4,28 @@ import gzip
 import json
 from dataclasses import asdict
 
-from .backup_model import (
-    ActionBackup,
-    BackupData,
-    BackupMeta,
-    HostBackup,
-    HostGroupBackup,
-    MaintenanceBackup,
-    UserBackup,
-    UserGroupBackup,
-)
+try:
+    from .backup_model import (
+        ActionBackup,
+        BackupData,
+        BackupMeta,
+        HostBackup,
+        HostGroupBackup,
+        MaintenanceBackup,
+        UserBackup,
+        UserGroupBackup,
+    )
+except ImportError:
+    from backup_model import (  # type: ignore
+        ActionBackup,
+        BackupData,
+        BackupMeta,
+        HostBackup,
+        HostGroupBackup,
+        MaintenanceBackup,
+        UserBackup,
+        UserGroupBackup,
+    )
 
 
 def save_backup(data: BackupData, path: str) -> None:

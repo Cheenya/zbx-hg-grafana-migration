@@ -8,7 +8,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from openpyxl.utils import get_column_letter  # type: ignore
 
-from . import config
+try:
+    from . import config
+except ImportError:
+    import config  # type: ignore
 
 
 EXCLUDED_GROUP_PATTERNS = [re.compile(pattern) for pattern in config.EXCLUDED_GROUP_PATTERNS]
