@@ -248,12 +248,6 @@ MAPPING_FORBID_ENV_MISMATCH = True
 `HOSTS_DISABLED`
 - выключенные хосты в scope.
 
-`HOSTS_PHYSICAL`
-- хосты, похожие на физические, по эвристикам из `config.py`.
-
-`HOSTS_DISCOVERY`
-- discovery-похожие хосты по эвристикам из `config.py`.
-
 `HOSTS_SKIPPED_ENV`
 - хосты выбранной AS, исключённые по `SCOPE_ENV`.
 

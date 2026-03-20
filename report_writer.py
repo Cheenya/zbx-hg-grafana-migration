@@ -21,10 +21,6 @@ HOST_HEADERS = [
     "GUEST_NAME",
     "ENV_RAW",
     "ENV_SCOPE",
-    "physical_hint",
-    "physical_hint_reasons",
-    "discovery_hint",
-    "discovery_hint_reasons",
     "has_old_groups",
     "missing_any_new_group",
     "old_groups",
@@ -45,10 +41,6 @@ UNKNOWN_HOST_HEADERS = [
     "ENV_RAW",
     "ENV_SCOPE",
     "groups",
-    "physical_hint",
-    "physical_hint_reasons",
-    "discovery_hint",
-    "discovery_hint_reasons",
     "unknown_reasons",
 ]
 
@@ -64,10 +56,6 @@ SKIPPED_HOST_HEADERS = [
     "GUEST_NAME",
     "ENV_RAW",
     "ENV_SCOPE",
-    "physical_hint",
-    "physical_hint_reasons",
-    "discovery_hint",
-    "discovery_hint_reasons",
     "skip_reason",
 ]
 
@@ -149,8 +137,6 @@ def save_inventory_json(report: Dict[str, Any], path: str) -> None:
         "host_enrichment": report["host_enrichment"],
         "hosts_clean": report["hosts_clean"],
         "hosts_disabled": report["hosts_disabled"],
-        "hosts_physical": report["hosts_physical"],
-        "hosts_discovery": report["hosts_discovery"],
         "hosts_skipped_env": report["hosts_skipped_env"],
         "env_summary": report["env_summary"],
         "asn_summary": report["asn_summary"],
@@ -251,12 +237,6 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
 
     disabled_ws = wb.create_sheet("HOSTS_DISABLED")
     _append_rows(disabled_ws, report["hosts_disabled"], HOST_HEADERS)
-
-    physical_ws = wb.create_sheet("HOSTS_PHYSICAL")
-    _append_rows(physical_ws, report["hosts_physical"], HOST_HEADERS)
-
-    discovery_ws = wb.create_sheet("HOSTS_DISCOVERY")
-    _append_rows(discovery_ws, report["hosts_discovery"], HOST_HEADERS)
 
     clean_ws = wb.create_sheet("HOSTS_CLEAN")
     _append_rows(clean_ws, report["hosts_clean"], HOST_HEADERS)

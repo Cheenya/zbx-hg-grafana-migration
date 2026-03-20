@@ -67,19 +67,6 @@ EXCLUDED_GROUP_PATTERNS: tuple[str, ...] = (
     r"^(BNK|DOM)-(POSTGRES|POSTGRESQL|PG)(-|$)",
 )
 
-# Эвристики для отчёта. Это только подсветка, не управляющая логика.
-PHYSICAL_HINT_PATTERNS: tuple[str, ...] = (
-    r"(?i)\bbare[ -]?metal\b",
-    r"(?i)\bphysical\b",
-    r"(?i)\b(?:idrac|iLO|imm|ipmi)\b",
-)
-
-DISCOVERY_HINT_PATTERNS: tuple[str, ...] = (
-    r"(?i)\bdiscovery\b",
-    r"(?i)\bdiscover(?:ed|y)?\b",
-)
-
-
 @dataclass
 class ZabbixConnection:
     api_url: str

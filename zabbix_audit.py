@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Sequence, Set
 
@@ -125,46 +124,6 @@ def _host_status_label(status: Any) -> str:
 def _display_value(value: str | None) -> str:
     text = str(value or "").strip()
     return text or "(empty)"
-
-
-def _compile_patterns(values: Sequence[str]) -> List[re.Pattern[str]]:
-    return [re.compile(item) for item in values if str(item or "").strip()]
-
-
-def _match_host_hints(
-    patterns: Sequence[re.Pattern[str]],
-    host: Dict[str, Any],
-    as_value: str | None,
-    asn_value: str | None,
-    env_value_raw: str | None,
-    gas_value: str | None,
-    guest_name: str | None,
-    group_names: Sequence[str],
-) -> str:
-    candidates = [
-        ("host", str(host.get("host") or "").strip()),
-        ("name", str(host.get("name") or "").strip()),
-        ("AS", str(as_value or "").strip()),
-        ("ASN", str(asn_value or "").strip()),
-        ("ENV", str(env_value_raw or "").strip()),
-        ("GAS", str(gas_value or "").strip()),
-        ("GUEST_NAME", str(guest_name or "").strip()),
-    ]
-    for group_name in group_names:
-        candidates.append(("group", str(group_name or "").strip()))
-
-    hits: List[str] = []
-    seen: Set[str] = set()
-    for pattern in patterns:
-        for field_name, value in candidates:
-            if not value or not pattern.search(value):
-                continue
-            hit = f"{field_name}:{value}"
-            if hit in seen:
-                continue
-            seen.add(hit)
-            hits.append(hit)
-    return "; ".join(hits)
 
 
 def _is_unknown_value(value: str | None) -> bool:
@@ -617,9 +576,6 @@ def build_scope_report(
     if not scope_as_values:
         raise RuntimeError("Audit scope is empty. Set SCOPE_AS in config.py.")
 
-    physical_patterns = _compile_patterns(config.PHYSICAL_HINT_PATTERNS)
-    discovery_patterns = _compile_patterns(config.DISCOVERY_HINT_PATTERNS)
-
     hostgroups = fetch_hostgroups(api)
     hosts = fetch_hosts(api)
     actions = fetch_actions(api)
@@ -655,8 +611,6 @@ def build_scope_report(
     scope_hosts_clean: List[Dict[str, Any]] = []
     scope_hosts_disabled: List[Dict[str, Any]] = []
     scope_hosts_no_any_new: List[Dict[str, Any]] = []
-    scope_hosts_physical: List[Dict[str, Any]] = []
-    scope_hosts_discovery: List[Dict[str, Any]] = []
     scope_hosts_skipped_env: List[Dict[str, Any]] = []
     old_bucket: Dict[str, Dict[str, Any]] = defaultdict(
         lambda: {"groupid": "", "hostids": set(), "host_names": set(), "as_values": set(), "env_values": set()}
@@ -695,27 +649,6 @@ def build_scope_report(
             if str(group.get("name") or "") and not is_excluded_group(str(group.get("name") or ""))
         ]
 
-        physical_hint_reasons = _match_host_hints(
-            physical_patterns,
-            host,
-            as_value,
-            asn_value,
-            env_value_raw,
-            gas_value,
-            guest_name,
-            group_names,
-        )
-        discovery_hint_reasons = _match_host_hints(
-            discovery_patterns,
-            host,
-            as_value,
-            asn_value,
-            env_value_raw,
-            gas_value,
-            guest_name,
-            group_names,
-        )
-
         if unknown_reasons:
             include_unknown = _unknown_in_scope(host, scope_as_values, scope_as_lower)
             if include_unknown:
@@ -733,10 +666,6 @@ def build_scope_report(
                         "ENV_RAW": env_value_raw or "",
                         "ENV_SCOPE": env_value or "",
                         "groups": join_sorted(group_names),
-                        "physical_hint": "yes" if physical_hint_reasons else "",
-                        "physical_hint_reasons": physical_hint_reasons,
-                        "discovery_hint": "yes" if discovery_hint_reasons else "",
-                        "discovery_hint_reasons": discovery_hint_reasons,
                         "unknown_reasons": ", ".join(unknown_reasons),
                     }
                 )
@@ -761,10 +690,6 @@ def build_scope_report(
             "old_groups": "",
             "new_groups": "",
             "other_groups": "",
-            "physical_hint": "yes" if physical_hint_reasons else "",
-            "physical_hint_reasons": physical_hint_reasons,
-            "discovery_hint": "yes" if discovery_hint_reasons else "",
-            "discovery_hint_reasons": discovery_hint_reasons,
             "replace_candidate": "",
             "has_old_groups": "",
             "missing_any_new_group": "",
@@ -832,10 +757,6 @@ def build_scope_report(
             scope_hosts_disabled.append(dict(host_row))
         if missing_any_new_group:
             scope_hosts_no_any_new.append(dict(host_row))
-        if physical_hint_reasons:
-            scope_hosts_physical.append(dict(host_row))
-        if discovery_hint_reasons:
-            scope_hosts_discovery.append(dict(host_row))
 
         host_id = str(host.get("hostid") or "")
         _touch_value_summary(
@@ -1151,8 +1072,6 @@ def build_scope_report(
         "hosts_enrichment": len(host_enrichment_rows),
         "hosts_clean": len(scope_hosts_clean),
         "hosts_disabled": len(scope_hosts_disabled),
-        "hosts_physical_hint": len(scope_hosts_physical),
-        "hosts_discovery_hint": len(scope_hosts_discovery),
         "hosts_skipped_env": len(scope_hosts_skipped_env),
         "unknown_hosts": len(unknown_rows),
         "env_values": len(env_summary_rows),
@@ -1177,8 +1096,6 @@ def build_scope_report(
         "host_enrichment": host_enrichment_rows,
         "hosts_clean": _sort_host_rows(scope_hosts_clean),
         "hosts_disabled": _sort_host_rows(scope_hosts_disabled),
-        "hosts_physical": _sort_host_rows(scope_hosts_physical),
-        "hosts_discovery": _sort_host_rows(scope_hosts_discovery),
         "hosts_skipped_env": _sort_host_rows(scope_hosts_skipped_env),
         "env_summary": env_summary_rows,
         "asn_summary": asn_summary_rows,
