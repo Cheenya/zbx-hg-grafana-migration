@@ -11,7 +11,6 @@ ZBX_PASSWORD = ""
 GRAFANA_URL = ""
 GRAFANA_USER = ""
 GRAFANA_PASSWORD = ""
-GRAFANA_TOKEN = ""
 
 
 # Scope нового контура.
@@ -25,13 +24,17 @@ MONITORED_HOSTS_ONLY: bool = False
 ENABLE_GRAFANA: bool = True
 OUTPUT_DIR: str = "v2_output"
 OUTPUT_PREFIX: str = "scope_audit_v2"
+MAPPING_PLAN_PREFIX: str = "mapping_plan_v2"
+IMPACT_PLAN_PREFIX: str = "impact_plan_v2"
 BACKUP_PREFIX: str = "scope_backup_v2"
 GROUP_SAMPLE_HOSTS: int = 10
 SAVE_JSON_INVENTORY: bool = True
 
 
-# Входные файлы для backup/verify v2.
-SOURCE_INVENTORY_JSON: str = ""
+# Входные файлы для plan/backup/verify v2.
+SOURCE_AUDIT_JSON: str = ""
+SOURCE_MAPPING_PLAN_XLSX: str = ""
+SOURCE_IMPACT_PLAN_JSON: str = ""
 SOURCE_BACKUP_FILE: str = ""
 
 
@@ -39,9 +42,22 @@ SOURCE_BACKUP_FILE: str = ""
 TAG_AS: str = "AS"
 TAG_ASN: str = "ASN"
 TAG_ENV: str = "ENV"
+TAG_GAS: str = "GAS"
+TAG_GUEST_NAME: str = "GUEST-NAME"
+
+UNKNOWN_TAG_VALUE: str = "UNKNOWN"
+UNKNOWN_GROUP_NAME: str = "UNKNOWN"
+EXCLUDE_UNKNOWN_FROM_STATS: bool = True
+
 ENV_PROD_LABEL: str = "PROD"
 ENV_NONPROD_LABEL: str = "NONPROD"
 PROD_ENV_VALUES: tuple[str, ...] = ("PROD",)
+
+MAPPING_MIN_INTERSECTION: int = 2
+MAPPING_MIN_OLD_COVERAGE: float = 0.20
+MAPPING_MIN_NEW_COVERAGE: float = 0.20
+MAPPING_FORBID_ENV_MISMATCH: bool = True
+
 EXCLUDED_GROUP_PATTERNS: tuple[str, ...] = (
     r"^Maintenance-dc-enable$",
     r"^Maintenance-",
@@ -62,7 +78,6 @@ class GrafanaConnection:
     base_url: str
     username: str
     password: str
-    token: str
 
 
 def load_zabbix_connection() -> ZabbixConnection:
@@ -78,5 +93,4 @@ def load_grafana_connection() -> GrafanaConnection:
         base_url=(GRAFANA_URL or "").strip(),
         username=(GRAFANA_USER or "").strip(),
         password=(GRAFANA_PASSWORD or ""),
-        token=(GRAFANA_TOKEN or "").strip(),
     )

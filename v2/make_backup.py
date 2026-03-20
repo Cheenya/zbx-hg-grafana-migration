@@ -21,7 +21,7 @@ from backup_model import (
 from common import build_scope_part, normalize_values
 
 
-def load_inventory(path: str) -> Dict[str, Any]:
+def load_impact_plan(path: str) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
 
@@ -90,6 +90,7 @@ def fetch_usergroups(api: ZabbixAPI, usrgrpids: Sequence[str]) -> List[Dict[str,
             "output": "extend",
             "usrgrpids": list(usrgrpids),
             "selectHostGroupRights": "extend",
+            "selectTemplateGroupRights": "extend",
             "selectTagFilters": "extend",
             "selectUsers": "extend",
         },
@@ -119,26 +120,30 @@ def fetch_maintenances(api: ZabbixAPI, maintenanceids: Sequence[str]) -> List[Di
             "output": "extend",
             "maintenanceids": list(maintenanceids),
             "selectGroups": "extend",
+            "selectHosts": "extend",
+            "selectTags": "extend",
+            "selectTimeperiods": "extend",
         },
     )
 
 
-def create_backup(api: ZabbixAPI, inventory_path: str, backup_path: str) -> BackupData:
-    raw_inventory = load_inventory(inventory_path)
-    inventory = raw_inventory.get("inventory") or {}
-    scope_as = normalize_values(inventory.get("scope_as") or [])
-    scope_envs = normalize_values(inventory.get("scope_envs") or [])
+def create_backup(api: ZabbixAPI, impact_plan_path: str, backup_path: str) -> BackupData:
+    raw_impact_plan = load_impact_plan(impact_plan_path)
+    summary = raw_impact_plan.get("summary") or {}
+    backup_scope = raw_impact_plan.get("backup_scope") or {}
+    scope_as = normalize_values(summary.get("scope_as") or [])
+    scope_envs = normalize_values(summary.get("scope_envs") or [])
 
     if not scope_as:
-        raise RuntimeError("Inventory scope_as is empty. Run v2 audit first and use its JSON output.")
+        raise RuntimeError("Impact plan scope_as is empty. Build impact plan first.")
 
-    inventory_hostgroups = inventory.get("hostgroups") or []
-    hostgroup_ids = _extract_ids(inventory_hostgroups, "groupid")
-    hostids = normalize_values(inventory.get("hostids") or [])
-    actionids = normalize_values(inventory.get("actionids") or [])
-    usergroupids = normalize_values(inventory.get("usergroupids") or [])
-    userids = normalize_values(inventory.get("userids") or [])
-    maintenanceids = normalize_values(inventory.get("maintenanceids") or [])
+    scoped_hostgroups = backup_scope.get("hostgroups") or []
+    hostgroup_ids = _extract_ids(scoped_hostgroups, "groupid")
+    hostids = normalize_values(backup_scope.get("hostids") or [])
+    actionids = normalize_values(backup_scope.get("actionids") or [])
+    usergroupids = normalize_values(backup_scope.get("usergroupids") or [])
+    userids = normalize_values(backup_scope.get("userids") or [])
+    maintenanceids = normalize_values(backup_scope.get("maintenanceids") or [])
 
     hostgroups = fetch_hostgroups(api, hostgroup_ids)
     hosts = fetch_hosts(api, hostids)
@@ -156,19 +161,19 @@ def create_backup(api: ZabbixAPI, inventory_path: str, backup_path: str) -> Back
 
     inventory_kind_by_groupid = {
         str(item.get("groupid") or ""): str(item.get("kind") or "")
-        for item in inventory_hostgroups
+        for item in scoped_hostgroups
         if str(item.get("groupid") or "").strip()
     }
 
     data = BackupData(
         meta=BackupMeta(
             created_at=datetime.now().isoformat(timespec="seconds"),
-            inventory_path=inventory_path,
+            impact_plan_path=impact_plan_path,
             zabbix_url=str(getattr(api, "api_url", "")),
             scope_as=scope_as,
             scope_envs=scope_envs,
         ),
-        inventory=inventory,
+        impact_plan=raw_impact_plan,
         hostgroups=[
             HostGroupBackup(
                 groupid=str(group.get("groupid") or ""),
@@ -230,23 +235,23 @@ def create_backup(api: ZabbixAPI, inventory_path: str, backup_path: str) -> Back
 
 
 def main() -> int:
-    inventory_path = str(config.SOURCE_INVENTORY_JSON or "").strip()
-    if not inventory_path:
-        raise RuntimeError("Set v2/config.py SOURCE_INVENTORY_JSON to the JSON file from v2.audit_scope.")
+    impact_plan_path = str(config.SOURCE_IMPACT_PLAN_JSON or "").strip()
+    if not impact_plan_path:
+        raise RuntimeError("Set v2/config.py SOURCE_IMPACT_PLAN_JSON to the JSON file from v2.build_impact_plan.")
 
-    inventory = load_inventory(inventory_path)
-    inventory_scope = inventory.get("inventory") or {}
+    impact_plan = load_impact_plan(impact_plan_path)
+    impact_summary = impact_plan.get("summary") or {}
     backup_path = build_backup_path(
-        normalize_values(inventory_scope.get("scope_as") or []),
-        normalize_values(inventory_scope.get("scope_envs") or []),
+        normalize_values(impact_summary.get("scope_as") or []),
+        normalize_values(impact_summary.get("scope_envs") or []),
     )
 
     connection = config.load_zabbix_connection()
     api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
     api.login(connection.username, connection.password)
 
-    print(f"Building backup from inventory: {inventory_path}")
-    create_backup(api, inventory_path, backup_path)
+    print(f"Building backup from impact plan: {impact_plan_path}")
+    create_backup(api, impact_plan_path, backup_path)
     print(f"Backup saved: {backup_path}")
     return 0
 

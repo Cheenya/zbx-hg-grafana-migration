@@ -2,103 +2,56 @@
 
 ## 1. Назначение
 
-Каталог `v2/` — это новый, упрощенный и изолированный контур для подготовки миграции.
+`v2/` — это новый отдельный контур подготовки миграции.
 
-Его текущая задача: **дать безопасный подготовительный контур** по выбранному scope, который уже умеет:
-- делать read-only аудит;
-- собирать backup по готовому inventory;
-- проверять backup на полное покрытие inventory.
+Его задача сейчас:
+- честно собрать read-only аудит;
+- дать редактируемый `mapping_plan`;
+- построить точный `impact_plan`;
+- собрать backup строго по change-scope;
+- проверить backup;
+- уметь сделать restore.
 
 На текущем этапе `v2`:
-- **ничего не меняет** в Zabbix;
-- **ничего не меняет** в Grafana;
-- только читает данные и сохраняет артефакты подготовки.
+- ничего не меняет в Zabbix;
+- ничего не меняет в Grafana;
+- не выполняет саму миграцию.
 
 
-## 2. Что уже реализовано
-
-Точки входа:
+## 2. Точки входа
 
 ```bash
 python v2/audit_scope.py
+python v2/build_impact_plan.py
 python v2/make_backup.py
 python v2/verify_backup.py
+python v2/restore_backup.py
 ```
 
-`python v2/audit_scope.py`
-1. Подключается к Zabbix.
-2. Берет scope из `v2/config.py`.
-3. Собирает инвентаризацию:
-   - хостов в scope;
-   - OLD host-groups;
-   - NEW host-groups;
-   - actions;
-   - usergroups;
-   - maintenances.
-4. При включенной Grafana-части:
-   - получает dashboards;
-   - скачивает JSON dashboards;
-   - ищет exact matches и pattern-like matches по OLD/NEW именам.
-5. Сохраняет два артефакта:
-   - `xlsx` отчет;
-   - `json` inventory.
-
-`python v2/make_backup.py`
-1. Читает путь `SOURCE_INVENTORY_JSON` из `v2/config.py`.
-2. Загружает `json inventory`, созданный `audit_scope`.
-3. Достает из inventory точные ID сущностей:
-   - host-groups;
-   - hosts;
-   - actions;
-   - usergroups;
-   - users;
-   - maintenances.
-4. Запрашивает эти сущности из Zabbix по ID.
-5. Проверяет полное покрытие inventory.
-6. Сохраняет backup в `json.gz`.
-
-`python v2/verify_backup.py`
-1. Читает `SOURCE_INVENTORY_JSON`.
-2. Читает `SOURCE_BACKUP_FILE`.
-3. Сравнивает scope и наборы ID между inventory и backup.
-4. Падает с ошибкой, если есть missing или extra объекты.
+Назначение:
+- `audit_scope.py` — аудит и первичный `mapping_plan.xlsx`;
+- `build_impact_plan.py` — build change-scope по выбранным mappings;
+- `make_backup.py` — backup по `impact_plan.json`;
+- `verify_backup.py` — сверка backup против `impact_plan.json`;
+- `restore_backup.py` — откат Zabbix из backup.
 
 
-## 3. Структура каталога `v2`
+## 3. Что лежит в каталоге
 
-- `config.py`
-  Единый конфиг нового контура.
-- `audit_scope.py`
-  CLI-скрипт для запуска scoped-аудита.
-- `zabbix_audit.py`
-  Логика чтения Zabbix и построения read-only inventory.
-- `grafana_audit.py`
-  Логика чтения Grafana dashboards и поиска совпадений.
-- `api_clients.py`
-  HTTP-клиенты только для `v2`.
-- `common.py`
-  Общие утилиты.
-- `report_writer.py`
-  Запись `xlsx` и `json`.
-- `backup_model.py`
-  Dataclass-модель backup-файла.
-- `backup_io.py`
-  Чтение и запись backup-файла.
-- `make_backup.py`
-  Сбор backup по `json inventory`.
-- `verify_backup.py`
-  Сверка backup против `json inventory`.
-- `README.md`
-  Короткая памятка.
-- `MANUAL.md`
-  Этот подробный документ.
+- `config.py` — единый конфиг `v2`;
+- `api_clients.py` — HTTP-клиенты для Zabbix/Grafana;
+- `common.py` — общие утилиты и генерация путей артефактов;
+- `zabbix_audit.py` — read-only аудит Zabbix;
+- `grafana_audit.py` — read-only аудит Grafana;
+- `report_writer.py` — запись audit workbook/json;
+- `mapping_plan.py` — запись/чтение `mapping_plan.xlsx`;
+- `impact_plan.py` — построение и запись `impact_plan`;
+- `backup_model.py` / `backup_io.py` — модель и I/O backup;
+- `README.md` — краткая памятка;
+- `MANUAL.md` — этот документ.
 
 
-## 4. Где настраивать запуск
-
-Все параметры нового контура находятся в:
-
-- `v2/config.py`
+## 4. Что настраивается в `v2/config.py`
 
 ### 4.1. Подключение к Zabbix
 
@@ -108,19 +61,15 @@ ZBX_USER = ""
 ZBX_PASSWORD = ""
 ```
 
-Нужно заполнить напрямую.
-
 ### 4.2. Подключение к Grafana
 
 ```python
 GRAFANA_URL = ""
 GRAFANA_USER = ""
 GRAFANA_PASSWORD = ""
-GRAFANA_TOKEN = ""
 ```
 
-Если используешь логин/пароль, заполняй их.
-Если используешь token, заполняй `GRAFANA_TOKEN`.
+В `v2` Grafana сейчас работает по логину/паролю.
 
 ### 4.3. Scope
 
@@ -129,26 +78,21 @@ SCOPE_AS: tuple[str, ...] = ()
 SCOPE_ENVS: tuple[str, ...] = ()
 ```
 
-`SCOPE_AS`
-- список AS, по которым идет аудит;
-- без него запуск завершится ошибкой.
+- `SCOPE_AS` обязателен;
+- `SCOPE_ENVS` опционален.
 
-`SCOPE_ENVS`
-- опциональный фильтр по **каноническому** `ENV`;
-- если пустой, аудит берет все хосты выбранной AS;
-- если задан, например `("NONPROD",)`, то в основной отчет попадут только эти хосты;
-- остальные хосты той же AS попадут в отдельный лист `HOSTS_SKIPPED_ENV`.
+Логика `ENV` фиксированная:
+- `PROD` -> `PROD`
+- любое другое непустое значение -> `NONPROD`
 
-Важно:
-- руками перечислять `DEV`, `STAGE`, `TEST`, `UAT` и подобные значения не нужно;
-- в `v2` зафиксирована логика:
-  - `PROD` -> `PROD`
-  - любое другое непустое значение -> `NONPROD`
-- значит, для pilot достаточно задавать:
-  - `SCOPE_ENVS = ("NONPROD",)`
-  - или `SCOPE_ENVS = ("PROD",)`
+То есть для pilot достаточно:
 
-### 4.4. Runtime-параметры
+```python
+SCOPE_AS = ("your_as",)
+SCOPE_ENVS = ("NONPROD",)
+```
+
+### 4.4. Runtime
 
 ```python
 HTTP_TIMEOUT_SEC = 90
@@ -156,31 +100,32 @@ MONITORED_HOSTS_ONLY = False
 ENABLE_GRAFANA = True
 OUTPUT_DIR = "v2_output"
 OUTPUT_PREFIX = "scope_audit_v2"
+MAPPING_PLAN_PREFIX = "mapping_plan_v2"
+IMPACT_PLAN_PREFIX = "impact_plan_v2"
+BACKUP_PREFIX = "scope_backup_v2"
 GROUP_SAMPLE_HOSTS = 10
 SAVE_JSON_INVENTORY = True
-BACKUP_PREFIX = "scope_backup_v2"
 ```
 
-Рекомендации:
-- `MONITORED_HOSTS_ONLY = False` оставить так, это безопаснее для полного аудита;
-- `ENABLE_GRAFANA = True`, если Grafana должна участвовать в precheck;
-- `OUTPUT_DIR` менять только если нужен другой каталог артефактов.
+Практически:
+- `MONITORED_HOSTS_ONLY = False` лучше оставить;
+- `ENABLE_GRAFANA = True`, если нужен precheck dashboards;
+- все артефакты по умолчанию идут в `v2_output/`.
 
-### 4.5. Входные файлы для backup/verify
+### 4.5. Входные файлы следующих шагов
 
 ```python
-SOURCE_INVENTORY_JSON = ""
+SOURCE_AUDIT_JSON = ""
+SOURCE_MAPPING_PLAN_XLSX = ""
+SOURCE_IMPACT_PLAN_JSON = ""
 SOURCE_BACKUP_FILE = ""
 ```
 
-`SOURCE_INVENTORY_JSON`
-- путь к `json`, который создал `python v2/audit_scope.py`;
-- обязателен для `python v2/make_backup.py`;
-- обязателен для `python v2/verify_backup.py`.
-
-`SOURCE_BACKUP_FILE`
-- путь к backup-файлу, который создал `python v2/make_backup.py`;
-- обязателен для `python v2/verify_backup.py`.
+Использование:
+- `SOURCE_AUDIT_JSON` — вход для `build_impact_plan.py`;
+- `SOURCE_MAPPING_PLAN_XLSX` — вход для `build_impact_plan.py`;
+- `SOURCE_IMPACT_PLAN_JSON` — вход для `make_backup.py` и `verify_backup.py`;
+- `SOURCE_BACKUP_FILE` — вход для `verify_backup.py` и `restore_backup.py`.
 
 ### 4.6. Теги
 
@@ -188,388 +133,226 @@ SOURCE_BACKUP_FILE = ""
 TAG_AS = "AS"
 TAG_ASN = "ASN"
 TAG_ENV = "ENV"
+TAG_GAS = "GAS"
+TAG_GUEST_NAME = "GUEST-NAME"
 ```
 
-Если в Zabbix используются другие имена тегов, менять нужно здесь.
-
-### 4.7. Логика нормализации ENV
-
-В `v2/config.py` зафиксированы значения:
+### 4.7. UNKNOWN
 
 ```python
-ENV_PROD_LABEL = "PROD"
-ENV_NONPROD_LABEL = "NONPROD"
-PROD_ENV_VALUES = ("PROD",)
+UNKNOWN_TAG_VALUE = "UNKNOWN"
+UNKNOWN_GROUP_NAME = "UNKNOWN"
+EXCLUDE_UNKNOWN_FROM_STATS = True
 ```
 
-Это означает:
-- если raw `ENV` равен `PROD`, то scope-класс будет `PROD`;
-- любой другой непустой raw `ENV` попадает в класс `NONPROD`.
+Хост считается `UNKNOWN`, если:
+- `AS == UNKNOWN`;
+- `ASN == UNKNOWN`;
+- есть группа `UNKNOWN`;
+- отсутствует `AS`.
 
-Примеры:
-- `PROD` -> `PROD`
-- `NONPROD` -> `NONPROD`
-- `DEV` -> `NONPROD`
-- `STAGE` -> `NONPROD`
-- `TEST` -> `NONPROD`
-- `UAT` -> `NONPROD`
-- `PREPROD` -> `NONPROD`
-
-### 4.8. Исключаемые группы
+### 4.8. Порог для кандидатов в mapping plan
 
 ```python
-EXCLUDED_GROUP_PATTERNS = (...)
+MAPPING_MIN_INTERSECTION = 2
+MAPPING_MIN_OLD_COVERAGE = 0.20
+MAPPING_MIN_NEW_COVERAGE = 0.20
+MAPPING_FORBID_ENV_MISMATCH = True
 ```
 
-Это regex-группы, которые не должны участвовать в audit scope.
+Это влияет только на список кандидатов в `MAPPING_PLAN`.
+Это не означает автоматическую миграцию.
 
 
-## 5. Что считается scope
+## 5. Что делает `audit_scope.py`
 
-Scope в `v2` определяется так:
+`audit_scope.py`:
+- читает хосты, actions, usergroups, users, maintenances;
+- выделяет `UNKNOWN_HOSTS`;
+- строит `HOSTS`, `GROUPS_OLD`, `GROUPS_NEW`;
+- строит `MAPPING_PLAN` с кандидатами `OLD -> NEW`;
+- подтягивает Grafana matches;
+- пишет:
+  - audit workbook;
+  - audit json;
+  - отдельный `mapping_plan.xlsx`.
 
-1. Хост должен иметь тег `AS`.
-2. Значение `AS` должно входить в `SCOPE_AS`.
-3. Если задан `SCOPE_ENVS`, то **канонический** `ENV` хоста должен входить в этот список.
+### 5.1. Артефакты аудита
 
-Если `SCOPE_ENVS` задан:
-- подходящие хосты попадают в основную выборку;
-- хосты той же AS, но с другим `ENV`, попадают в `HOSTS_SKIPPED_ENV`.
+По одному запуску создаются:
+- `scope_audit_v2_<scope>_<timestamp>.xlsx`
+- `scope_audit_v2_<scope>_<timestamp>.json`
+- `mapping_plan_v2_<scope>_<timestamp>.xlsx`
 
-Это сделано специально для pilot-прогонов по `NONPROD`.
+### 5.2. Листы audit workbook
 
+`SUMMARY`
+- сводка по scope и количествам объектов.
 
-## 6. Как запускать
+`UNKNOWN_HOSTS`
+- хосты с `AS/ASN == UNKNOWN`, группой `UNKNOWN` или без `AS`.
 
-### 6.1. Базовый запуск
+`HOSTS`
+- основные хосты scope;
+- показывает `AS`, `ASN`, `GAS`, `GUEST_NAME`, `ENV_RAW`, `ENV_SCOPE`.
 
-```bash
-python v2/audit_scope.py
-```
+`HOSTS_SKIPPED_ENV`
+- хосты выбранной AS, исключённые по `SCOPE_ENVS`.
 
-### 6.2. С пользовательскими именами файлов
+`GROUPS_OLD`
+- legacy host-groups в scope.
 
-```bash
-python v2/audit_scope.py --out-xlsx my_scope.xlsx --out-json my_scope.json
-```
+`GROUPS_NEW`
+- новые host-groups в scope.
 
-### 6.3. Рекомендуемый первый pilot
+`MAPPING_PLAN`
+- кандидаты `OLD -> NEW`.
 
-В `v2/config.py`:
+`ACTIONS`
+- actions, где используются scope-группы.
 
-```python
-SCOPE_AS = ("your_as",)
-SCOPE_ENVS = ("NONPROD",)
-```
+`USERGROUPS`
+- usergroups с правами/tag-filters/участием в recipients.
 
-После этого:
+`MAINTENANCES`
+- maintenances, где используются scope-группы.
 
-```bash
-python v2/audit_scope.py
-```
+`GRAFANA`
+- exact/pattern matches из dashboards.
 
-### 6.4. Сбор backup по inventory
+`INVENTORY`
+- технический блок audit scope.
 
-1. Выполнить `python v2/audit_scope.py`.
-2. Вписать путь к созданному `json` в `SOURCE_INVENTORY_JSON`.
-3. Запустить:
 
-```bash
-python v2/make_backup.py
-```
+## 6. Как читать `MAPPING_PLAN`
 
-### 6.5. Проверка backup
+Одна строка — один кандидат `OLD -> NEW`.
 
-1. Вписать путь к backup-файлу в `SOURCE_BACKUP_FILE`.
-2. Запустить:
+Главные поля:
+- `selected` — выставляется руками в `yes`, если именно эту пару нужно использовать;
+- `old_group`, `old_groupid`;
+- `new_group`, `new_groupid`;
+- `candidate_rank`;
+- `candidate_count`;
+- `intersection`;
+- `old_coverage`;
+- `new_coverage`;
+- `jaccard`;
+- `old_envs`, `new_envs`;
+- `env_relation`;
+- `manual_required`;
+- `status`;
+- `comment`.
 
-```bash
-python v2/verify_backup.py
-```
+Как использовать:
+- `selected=yes` ставим только на реально подтверждённые пары;
+- у одного `old_group` должна быть выбрана только одна строка;
+- один `new_group` тоже не должен быть выбран для нескольких `old_group`.
 
+Текущая автологика:
+- если кандидат один, без ENV-конфликта и без конфликта по `new_group`, строка ставится `selected=yes` автоматически;
+- всё неоднозначное остаётся на ручную проверку.
 
-## 7. Что будет создано
 
-По умолчанию артефакты кладутся в каталог:
+## 7. Что делает `build_impact_plan.py`
 
-- `v2_output/`
+Вход:
+- `SOURCE_AUDIT_JSON`
+- `SOURCE_MAPPING_PLAN_XLSX`
 
-Имя файлов строится так:
-
-- `<OUTPUT_PREFIX>_<scope>_<timestamp>.xlsx`
-- `<OUTPUT_PREFIX>_<scope>_<timestamp>.json`
-- `<BACKUP_PREFIX>_<scope>_<timestamp>.json.gz`
-
-Пример:
-
-- `v2_output/scope_audit_v2_dom_itmon_NONPROD_20260320_120000.xlsx`
-- `v2_output/scope_audit_v2_dom_itmon_NONPROD_20260320_120000.json`
-- `v2_output/scope_backup_v2_dom_itmon_NONPROD_20260320_121500.json.gz`
-
-
-## 8. Что лежит в XLSX
-
-### `SUMMARY`
-
-Сводные числа по запуску:
-- scope AS;
-- scope ENV;
-- сколько хостов попало в scope;
-- сколько хостов пропущено по ENV;
-- сколько OLD/NEW групп найдено;
-- сколько actions/usergroups/maintenances попало в отчет;
-- сколько записей пришло из Grafana;
-- текст ошибки Grafana, если она была.
-
-### `HOSTS`
-
-Хосты, которые реально попали в scope.
-
-Поля:
-- `hostid`
-- `host`
-- `name`
-- `status`
-- `AS`
-- `ASN`
-- `ENV_RAW`
-- `ENV_SCOPE`
-- `old_groups`
-- `new_groups`
-- `other_groups`
-
-Назначение:
-- быстро проверить, что scope вообще собран правильно;
-- видеть одновременно исходный `ENV` и канонический класс `PROD/NONPROD`;
-- увидеть, какие OLD/NEW группы реально висят на хостах.
-
-### `HOSTS_SKIPPED_ENV`
-
-Хосты выбранной AS, которые не попали в итоговую выборку из-за фильтра `SCOPE_ENVS`.
-
-Это важный лист для pilot:
-- показывает, что именно было исключено;
-- позволяет не перепутать `NONPROD` и `PROD`.
-
-Поля `ENV_RAW` и `ENV_SCOPE` нужны для прозрачности:
-- `ENV_RAW` показывает исходное значение тега;
-- `ENV_SCOPE` показывает, как `v2` классифицировал хост для pilot scope.
-
-### `GROUPS_OLD`
-
-Сводка по legacy-группам в scope.
-
-Поля:
-- `group_name`
-- `groupid`
-- `hosts_count`
-- `as_values`
-- `env_values`
-- `sample_hosts`
-
-### `GROUPS_NEW`
-
-Сводка по новым группам в scope.
-
-Поля те же, что и у `GROUPS_OLD`.
-
-### `ACTIONS`
-
-Trigger actions, которые затрагивают группы из scope.
-
-Поля:
-- `actionid`
-- `name`
-- `status`
-- `where_found`
-- `matched_groupids`
-- `matched_group_names`
-- `recipient_usergroups`
-- `recipient_users`
-- `recipients_media`
-
-`where_found`:
-- `conditions`
-- `operations`
-- `both`
-
-### `USERGROUPS`
-
-Группы пользователей, связанные со scope через:
-- права на host-groups;
-- tag filters;
-- участие как recipients в actions.
-
-Поля:
-- `usrgrpid`
-- `name`
-- `rights_on_scope_groups`
-- `matching_tag_filters`
-- `users`
-- `users_media`
-- `is_action_recipient`
-
-### `MAINTENANCES`
-
-Maintenances, связанные с host-groups из scope.
-
-Поля:
-- `maintenanceid`
-- `name`
-- `matched_groupids`
-- `matched_group_names`
-- `active_since`
-- `active_till`
-
-### `GRAFANA`
-
-Все найденные в dashboards упоминания scope-групп.
-
-Поля:
-- `AS`
-- `dashboard_uid`
-- `dashboard_title`
-- `match_type`
-- `matched_string`
-- `json_path`
-- `count`
-
-`match_type`:
-- `OLD`
-- `NEW`
-- `OLD_PATTERN`
-- `NEW_PATTERN`
-
-### `INVENTORY`
-
-Технический лист, где лежат сериализованные блоки будущего migration scope:
-- `hostids`
-- `hostgroups`
-- `actionids`
-- `usergroupids`
-- `userids`
-- `maintenanceids`
-
-Этот лист нужен как мост к будущему `backup v2`.
-
-
-## 9. Что лежит в JSON
-
-JSON — это машинно-читаемая версия отчета.
-
-Основные разделы:
-- `meta`
-- `summary`
-- `inventory`
-- `hosts`
-- `hosts_skipped_env`
-- `groups_old`
-- `groups_new`
-- `actions`
-- `usergroups`
-- `maintenances`
-- `grafana`
-
-Именно этот файл потом удобно использовать как вход для:
-- `backup v2`
-- `verify_backup v2`
-- `migrate v2`
-
-
-## 10. Как читать результаты
-
-### 10.1. Если цель — pilot на NONPROD
-
-Проверь по порядку:
-
-1. `SUMMARY`
-   Убедиться, что scope собран по нужной AS и нужному каноническому `ENV`.
-2. `HOSTS`
-   Убедиться, что попали только нужные NONPROD хосты.
-3. `HOSTS_SKIPPED_ENV`
-   Убедиться, что PROD не попал в основной scope.
-4. `GROUPS_OLD` и `GROUPS_NEW`
-   Проверить, что список host-groups выглядит ожидаемо.
-5. `ACTIONS`
-   Проверить, какие actions реально завязаны на scope.
-6. `USERGROUPS`
-   Проверить права и адресатов.
-7. `MAINTENANCES`
-   Проверить связанные maintenance windows.
-8. `GRAFANA`
-   Проверить dashboards, где встречаются OLD/NEW строки.
-
-### 10.2. Если цель — подготовка backup v2
-
-Смотри в первую очередь:
-- `INVENTORY`
-- `ACTIONS`
-- `USERGROUPS`
-- `MAINTENANCES`
-
-Там должен быть понятный и конечный список того, что в будущем пойдет в backup.
-
-
-## 11. Как работает backup v2
-
-`backup v2` строится по точным ID из `json inventory`, а не по догадкам и не по повторному вычислению scope.
-
-Что именно попадает в backup:
-- host-groups из `inventory.hostgroups`;
-- hosts из `inventory.hostids`;
-- actions из `inventory.actionids`;
-- usergroups из `inventory.usergroupids`;
-- users из `inventory.userids`;
-- maintenances из `inventory.maintenanceids`.
-
-Что важно:
-- backup не выбирает scope сам;
-- backup не пересчитывает связи заново;
-- backup берет только то, что уже зафиксировано в `json inventory`.
-
-Если Zabbix не вернул хотя бы один объект из inventory, `make_backup` завершится `RuntimeError`.
-
-
-## 12. Как работает verify backup
-
-`verify_backup` не ходит в Zabbix повторно. Он сравнивает два локальных артефакта:
-- `SOURCE_INVENTORY_JSON`;
-- `SOURCE_BACKUP_FILE`.
-
-Он проверяет:
+Шаги:
+1. Читает audit json.
+2. Читает `mapping_plan.xlsx`.
+3. Берёт только строки с `selected=yes`.
+4. Строит change points:
+   - `action.filter.conditions[*].value`
+   - `action.operations/recovery/update ... groupid`
+   - `usergroup.hostgroup_rights[*].groupid`
+   - `maintenance.groups[*].groupid`
+   - Grafana exact/pattern matches
+5. Формирует `backup_scope`.
+6. Пишет:
+   - `impact_plan_v2_*.xlsx`
+   - `impact_plan_v2_*.json`
+
+### 7.1. Что лежит в impact plan
+
+`SELECTED_MAPPINGS`
+- только реально выбранные пары.
+
+`ZABBIX_CHANGES`
+- точные места замены `old_groupid -> new_groupid`.
+
+`GRAFANA_CHANGES`
+- exact matches и pattern matches.
+
+`BACKUP_SCOPE`
+- набор ID, который надо реально бэкапить.
+
+
+## 8. Что делает `make_backup.py`
+
+Вход:
+- `SOURCE_IMPACT_PLAN_JSON`
+
+`make_backup.py`:
+- читает `backup_scope` из impact plan;
+- забирает из Zabbix:
+  - host-groups;
+  - hosts;
+  - actions;
+  - usergroups;
+  - users;
+  - maintenances;
+- сохраняет backup в `.json.gz`;
+- валится, если хотя бы один ID из `backup_scope` не вернулся.
+
+Важно:
+- backup теперь строится не по broad audit scope;
+- backup строится только по подтверждённому change-scope.
+
+
+## 9. Что делает `verify_backup.py`
+
+Вход:
+- `SOURCE_IMPACT_PLAN_JSON`
+- `SOURCE_BACKUP_FILE`
+
+`verify_backup.py` сверяет:
 - `scope_as`;
 - `scope_envs`;
-- набор `hostgroups`;
-- набор `hosts`;
-- набор `actions`;
-- набор `usergroups`;
-- набор `users`;
-- набор `maintenances`.
+- hostgroups;
+- hosts;
+- actions;
+- usergroups;
+- users;
+- maintenances.
 
-Проверка считается успешной только если:
-- нет missing ID;
-- нет extra ID;
+Проверка успешна только если:
+- нет `missing`;
+- нет `extra`;
 - scope совпадает.
 
 
-## 13. Ограничения текущей версии
+## 10. Что делает `restore_backup.py`
 
-Важно понимать, чего `v2` пока не делает:
+Вход:
+- `SOURCE_BACKUP_FILE`
 
-1. Не строит автоматический migration plan.
-2. Не говорит, какой OLD надо менять на какой NEW.
-3. Не блокирует ambiguous-ситуации автоматически.
-4. Не делает restore.
-5. Не применяет изменения в Zabbix.
-6. Не применяет изменения в Grafana.
-7. Не проверяет содержимое backup на семантическую корректность полей, кроме состава scope и ID.
+Откат идёт в порядке:
+1. users
+2. usergroups
+3. actions
+4. maintenances
+5. hosts
 
-Это сознательное ограничение. Сначала нужна честная инвентаризация и проверяемый backup, а не “умная” автоматизация.
+Restore работает только с Zabbix.
+Grafana в backup не входит.
 
 
-## 14. Рекомендуемый рабочий процесс
+## 11. Рекомендуемый рабочий процесс
 
-### Шаг 1. Pilot audit по NONPROD
+### Шаг 1. Audit
 
 В `v2/config.py`:
 
@@ -584,22 +367,48 @@ SCOPE_ENVS = ("NONPROD",)
 python v2/audit_scope.py
 ```
 
-### Шаг 2. Ручная проверка отчета
+### Шаг 2. Ручная проверка
 
 Проверить:
-- scope хостов;
-- списки OLD/NEW групп;
-- actions;
-- usergroups;
-- maintenances;
-- Grafana matches.
+- `UNKNOWN_HOSTS`;
+- `HOSTS`;
+- `GROUPS_OLD`;
+- `GROUPS_NEW`;
+- `MAPPING_PLAN`;
+- `ACTIONS`;
+- `USERGROUPS`;
+- `MAINTENANCES`;
+- `GRAFANA`.
 
-### Шаг 3. Backup v2
+### Шаг 3. Подтвердить mappings
+
+Открыть `mapping_plan_v2_*.xlsx` и руками отметить нужные строки:
+
+```text
+selected = yes
+```
+
+### Шаг 4. Build impact plan
 
 В `v2/config.py` указать:
 
 ```python
-SOURCE_INVENTORY_JSON = r"v2_output\\scope_audit_v2_dom_itmon_NONPROD_20260320_120000.json"
+SOURCE_AUDIT_JSON = r"v2_output\\scope_audit_v2_....json"
+SOURCE_MAPPING_PLAN_XLSX = r"v2_output\\mapping_plan_v2_....xlsx"
+```
+
+Запуск:
+
+```bash
+python v2/build_impact_plan.py
+```
+
+### Шаг 5. Build backup
+
+В `v2/config.py` указать:
+
+```python
+SOURCE_IMPACT_PLAN_JSON = r"v2_output\\impact_plan_v2_....json"
 ```
 
 Запуск:
@@ -608,12 +417,12 @@ SOURCE_INVENTORY_JSON = r"v2_output\\scope_audit_v2_dom_itmon_NONPROD_20260320_1
 python v2/make_backup.py
 ```
 
-### Шаг 4. Verify backup v2
+### Шаг 6. Verify backup
 
 В `v2/config.py` указать:
 
 ```python
-SOURCE_BACKUP_FILE = r"v2_output\\scope_backup_v2_dom_itmon_NONPROD_20260320_121500.json.gz"
+SOURCE_BACKUP_FILE = r"v2_output\\scope_backup_v2_....json.gz"
 ```
 
 Запуск:
@@ -622,68 +431,69 @@ SOURCE_BACKUP_FILE = r"v2_output\\scope_backup_v2_dom_itmon_NONPROD_20260320_121
 python v2/verify_backup.py
 ```
 
-### Шаг 5. Только потом проектировать migrate v2
+### Шаг 7. Restore test
 
-И только после этого можно делать:
-- restore v2;
-- dry-run на `NONPROD`;
-- apply на `NONPROD`;
-- postcheck;
-- и только потом выходить к `PROD`.
+На pilot-контуре:
+
+```bash
+python v2/restore_backup.py
+```
+
+Только после успешного цикла:
+- audit
+- mapping review
+- impact plan
+- backup
+- verify
+- restore test
+
+можно переходить к будущему `migrate v2`.
 
 
-## 15. Типовые проблемы
+## 12. Ограничения текущей версии
 
-### Ошибка: scope пустой
+`v2` пока не делает:
+- собственно миграцию;
+- postcheck после миграции;
+- автоматический rewrite Grafana dashboards;
+- автоматическое принятие ambiguous mappings.
+
+Это сознательно.
+
+
+## 13. Типовые проблемы
+
+### Scope пустой
 
 Причина:
 - не заполнен `SCOPE_AS`.
 
-Что делать:
-- указать `SCOPE_AS` в `v2/config.py`.
-
-### Хостов слишком мало
+### Хостов мало
 
 Проверь:
-- правильность `SCOPE_AS`;
-- правильность `TAG_AS`;
-- не сужает ли выборку `SCOPE_ENVS`;
-- как выглядят `ENV_RAW` и `ENV_SCOPE` у нужных хостов;
-- действительно ли нужные хосты имеют нужный `AS`.
+- `TAG_AS`;
+- `SCOPE_AS`;
+- `SCOPE_ENVS`;
+- `MONITORED_HOSTS_ONLY`.
 
-### Grafana не попала в отчет
+### В `MAPPING_PLAN` нет кандидатов
+
+Проверь:
+- действительно ли OLD и NEW группы пересекаются по хостам;
+- не отфильтровались ли кандидаты по `MAPPING_MIN_*`;
+- нет ли полного ENV mismatch.
+
+### Impact plan пустой
+
+Проверь:
+- есть ли строки `selected=yes` в `mapping_plan.xlsx`.
+
+### Grafana не попала в audit
 
 Проверь:
 - `ENABLE_GRAFANA = True`;
 - `GRAFANA_URL`;
-- `GRAFANA_USER` / `GRAFANA_PASSWORD` или `GRAFANA_TOKEN`.
+- `GRAFANA_USER`;
+- `GRAFANA_PASSWORD`.
 
-Если Grafana недоступна, Zabbix-отчет все равно сохранится, а ошибка должна появиться в `SUMMARY`.
-
-### В `GRAFANA` много строк `*_PATTERN`
-
-Это не ошибка. Это значит, что в dashboard JSON найдено не точное имя группы, а строка-паттерн:
-- regex;
-- переменная;
-- query string;
-- шаблон фильтра.
-
-Такие места как раз и нужны для ручного анализа перед миграцией.
-
-
-## 16. Что делать дальше
-
-После того как связка `audit -> backup -> verify` станет стабильной и понятной, следующий модуль должен быть:
-
-- `restore v2`
-- `migrate v2`
-
-Причем строить их нужно от тех же артефактов:
-- `json inventory` из `audit_scope v2`;
-- проверенного backup из `make_backup v2`.
-
-Только так получится:
-- предсказуемый scope;
-- проверяемый backup;
-- повторяемая миграция;
-- понятный rollback.
+Если Grafana недоступна, Zabbix-аудит всё равно сохраняется, а ошибка пишется в `SUMMARY`.

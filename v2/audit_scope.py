@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 
 import config
 from api_clients import ZabbixAPI
-from common import build_output_paths, normalize_values
+from common import build_artifact_path, normalize_values
 from grafana_audit import collect_grafana_rows
+from mapping_plan import write_mapping_plan_xlsx
 from report_writer import save_inventory_json, write_workbook
 from zabbix_audit import build_scope_report
 
@@ -14,6 +16,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Read-only scoped audit v2 (Zabbix + Grafana)")
     parser.add_argument("--out-xlsx", dest="out_xlsx", help="Path to XLSX report")
     parser.add_argument("--out-json", dest="out_json", help="Path to JSON inventory")
+    parser.add_argument("--out-mapping", dest="out_mapping", help="Path to standalone mapping plan XLSX")
     args = parser.parse_args()
 
     scope_as = normalize_values(config.SCOPE_AS)
@@ -21,9 +24,13 @@ def main() -> int:
     if not scope_as:
         raise RuntimeError("v2 scope is empty. Set v2/config.py SCOPE_AS.")
 
-    default_xlsx, default_json = build_output_paths(scope_as, scope_envs)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_xlsx = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_envs, ".xlsx", timestamp=timestamp)
+    default_json = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_envs, ".json", timestamp=timestamp)
+    default_mapping = build_artifact_path(config.MAPPING_PLAN_PREFIX, scope_as, scope_envs, ".xlsx", timestamp=timestamp)
     out_xlsx = args.out_xlsx or default_xlsx
     out_json = args.out_json or default_json
+    out_mapping = args.out_mapping or default_mapping
 
     connection = config.load_zabbix_connection()
     zabbix = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
@@ -43,6 +50,9 @@ def main() -> int:
 
     print(f"Writing XLSX: {out_xlsx}")
     write_workbook(report, out_xlsx)
+
+    print(f"Writing mapping plan: {out_mapping}")
+    write_mapping_plan_xlsx(report["mapping_plan"], out_mapping)
 
     if config.SAVE_JSON_INVENTORY:
         print(f"Writing JSON: {out_json}")

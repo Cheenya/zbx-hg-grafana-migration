@@ -56,14 +56,11 @@ class GrafanaAPI:
         base_url: str,
         username: str = "",
         password: str = "",
-        token: str = "",
         timeout_sec: int = 60,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = int(timeout_sec)
         self.session = requests.Session()
-        if token:
-            self.session.headers.update({"Authorization": f"Bearer {token}"})
         if username or password:
             self.session.auth = (username, password)
         self.session.headers.update({"Content-Type": "application/json", "Accept": "application/json"})

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any, Dict, List, Sequence, Set
 
 import config
@@ -102,6 +102,197 @@ def _host_name(host: Dict[str, Any]) -> str:
     return str(host.get("name") or host.get("host") or host.get("hostid") or "")
 
 
+def _is_unknown_value(value: str | None) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return text == str(config.UNKNOWN_TAG_VALUE).strip()
+
+
+def _unknown_reasons(host: Dict[str, Any]) -> List[str]:
+    tags = host.get("tags") or []
+    as_value = get_tag_value(tags, config.TAG_AS)
+    asn_value = get_tag_value(tags, config.TAG_ASN)
+
+    reasons: List[str] = []
+    if _is_unknown_value(as_value):
+        reasons.append("AS=UNKNOWN")
+    if _is_unknown_value(asn_value):
+        reasons.append("ASN=UNKNOWN")
+
+    group_names = [
+        str(group.get("name") or "")
+        for group in (host.get("groups") or [])
+        if str(group.get("name") or "") and not is_excluded_group(str(group.get("name") or ""))
+    ]
+    if str(config.UNKNOWN_GROUP_NAME or "").strip() in group_names:
+        reasons.append("group=UNKNOWN")
+    if not as_value:
+        reasons.append("missing AS")
+    return reasons
+
+
+def _env_relation(old_envs: Set[str], new_envs: Set[str]) -> str:
+    if not old_envs or not new_envs:
+        return "unknown"
+    if old_envs.intersection(new_envs):
+        if old_envs == new_envs:
+            return "match"
+        return "overlap"
+    return "mismatch"
+
+
+def _build_mapping_plan_rows(
+    old_bucket: Dict[str, Dict[str, Any]],
+    new_bucket: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    per_old: Dict[str, List[Dict[str, Any]]] = {}
+
+    for old_name, old_data in old_bucket.items():
+        old_hostids = set(old_data["hostids"])
+        old_count = len(old_hostids)
+        old_as_values = set(old_data["as_values"])
+        old_envs = {str(item).strip() for item in old_data["env_values"] if str(item).strip()}
+        rows: List[Dict[str, Any]] = []
+
+        for new_name, new_data in new_bucket.items():
+            new_as_values = set(new_data["as_values"])
+            if old_as_values and new_as_values and not old_as_values.intersection(new_as_values):
+                continue
+
+            new_hostids = set(new_data["hostids"])
+            new_count = len(new_hostids)
+            if old_count == 0 or new_count == 0:
+                continue
+
+            intersection = len(old_hostids.intersection(new_hostids))
+            if intersection < int(config.MAPPING_MIN_INTERSECTION):
+                continue
+
+            old_coverage = intersection / old_count
+            new_coverage = intersection / new_count
+            if old_coverage < float(config.MAPPING_MIN_OLD_COVERAGE) and new_coverage < float(config.MAPPING_MIN_NEW_COVERAGE):
+                continue
+
+            union_count = old_count + new_count - intersection
+            jaccard = (intersection / union_count) if union_count else 0.0
+            new_envs = {str(item).strip() for item in new_data["env_values"] if str(item).strip()}
+            rows.append(
+                {
+                    "selected": "",
+                    "AS": join_sorted(old_as_values or new_as_values),
+                    "old_group": old_name,
+                    "old_groupid": str(old_data["groupid"] or ""),
+                    "new_group": new_name,
+                    "new_groupid": str(new_data["groupid"] or ""),
+                    "candidate_rank": 0,
+                    "candidate_count": 0,
+                    "intersection": intersection,
+                    "old_hosts_count": old_count,
+                    "new_hosts_count": new_count,
+                    "old_coverage": round(old_coverage, 4),
+                    "new_coverage": round(new_coverage, 4),
+                    "jaccard": round(jaccard, 4),
+                    "old_envs": join_sorted(old_envs),
+                    "new_envs": join_sorted(new_envs),
+                    "env_relation": _env_relation(old_envs, new_envs),
+                    "top1_new_conflict": "",
+                    "manual_required": "yes",
+                    "status": "",
+                    "comment": "",
+                }
+            )
+
+        rows.sort(
+            key=lambda item: (
+                int(item["intersection"]),
+                float(item["old_coverage"]),
+                float(item["new_coverage"]),
+                float(item["jaccard"]),
+                str(item["new_group"]).lower(),
+            ),
+            reverse=True,
+        )
+
+        if not rows:
+            per_old[old_name] = [
+                {
+                    "selected": "",
+                    "AS": join_sorted(old_as_values),
+                    "old_group": old_name,
+                    "old_groupid": str(old_data["groupid"] or ""),
+                    "new_group": "",
+                    "new_groupid": "",
+                    "candidate_rank": "",
+                    "candidate_count": 0,
+                    "intersection": 0,
+                    "old_hosts_count": old_count,
+                    "new_hosts_count": "",
+                    "old_coverage": "",
+                    "new_coverage": "",
+                    "jaccard": "",
+                    "old_envs": join_sorted(old_envs),
+                    "new_envs": "",
+                    "env_relation": "",
+                    "top1_new_conflict": "",
+                    "manual_required": "yes",
+                    "status": "no_candidate",
+                    "comment": "",
+                }
+            ]
+            continue
+
+        for index, row in enumerate(rows, start=1):
+            row["candidate_rank"] = index
+            row["candidate_count"] = len(rows)
+        per_old[old_name] = rows
+
+    top1_new_counter: Counter[str] = Counter()
+    for rows in per_old.values():
+        first = rows[0] if rows else {}
+        new_group = str(first.get("new_group") or "").strip()
+        if new_group:
+            top1_new_counter[new_group] += 1
+
+    out: List[Dict[str, Any]] = []
+    for old_name in sorted(per_old.keys(), key=str.lower):
+        rows = per_old[old_name]
+        for row in rows:
+            new_group = str(row.get("new_group") or "").strip()
+            has_many_candidates = int(row.get("candidate_count") or 0) > 1
+            top1_conflict = bool(new_group and int(row.get("candidate_rank") or 0) == 1 and top1_new_counter[new_group] > 1)
+            env_mismatch = row.get("env_relation") == "mismatch"
+
+            row["top1_new_conflict"] = "yes" if top1_conflict else ""
+            if not new_group:
+                row["status"] = "no_candidate"
+                row["manual_required"] = "yes"
+                row["selected"] = ""
+            elif env_mismatch and bool(config.MAPPING_FORBID_ENV_MISMATCH):
+                row["status"] = "env_mismatch"
+                row["manual_required"] = "yes"
+                row["selected"] = ""
+            elif has_many_candidates:
+                row["status"] = "ambiguous_old"
+                row["manual_required"] = "yes"
+                row["selected"] = ""
+            elif top1_conflict:
+                row["status"] = "ambiguous_new"
+                row["manual_required"] = "yes"
+                row["selected"] = ""
+            elif int(row.get("candidate_rank") or 0) == 1:
+                row["status"] = "auto_selected"
+                row["manual_required"] = ""
+                row["selected"] = "yes"
+            else:
+                row["status"] = "candidate"
+                row["manual_required"] = "yes"
+                row["selected"] = ""
+            out.append(row)
+
+    return out
+
+
 def _group_bucket_rows(
     bucket: Dict[str, Dict[str, Any]],
     sample_limit: int,
@@ -166,6 +357,7 @@ def build_scope_report(
     )
     scope_groupids: Set[str] = set()
     scope_asn_values: Set[str] = set()
+    unknown_rows: List[Dict[str, Any]] = []
 
     for host in hosts:
         tags = host.get("tags") or []
@@ -173,6 +365,35 @@ def build_scope_report(
         env_value_raw = get_tag_value(tags, config.TAG_ENV)
         env_value = canonical_env_value(env_value_raw)
         asn_value = get_tag_value(tags, config.TAG_ASN)
+        gas_value = get_tag_value(tags, config.TAG_GAS)
+        guest_name = get_tag_value(tags, config.TAG_GUEST_NAME)
+        unknown_reasons = _unknown_reasons(host)
+
+        if unknown_reasons:
+            include_unknown = (not as_value) or _is_unknown_value(as_value) or as_value.strip().lower() in scope_as_lower
+            if include_unknown:
+                unknown_rows.append(
+                    {
+                        "hostid": str(host.get("hostid") or ""),
+                        "host": str(host.get("host") or ""),
+                        "name": str(host.get("name") or ""),
+                        "status": str(host.get("status") or ""),
+                        "AS": as_value or "",
+                        "ASN": asn_value or "",
+                        "GAS": gas_value or "",
+                        "GUEST_NAME": guest_name or "",
+                        "ENV_RAW": env_value_raw or "",
+                        "ENV_SCOPE": env_value or "",
+                        "groups": join_sorted(
+                            str(group.get("name") or "")
+                            for group in (host.get("groups") or [])
+                            if str(group.get("name") or "") and not is_excluded_group(str(group.get("name") or ""))
+                        ),
+                        "unknown_reasons": ", ".join(unknown_reasons),
+                    }
+                )
+            if config.EXCLUDE_UNKNOWN_FROM_STATS:
+                continue
 
         if not as_value or as_value.strip().lower() not in scope_as_lower:
             continue
@@ -184,6 +405,8 @@ def build_scope_report(
             "status": str(host.get("status") or ""),
             "AS": as_value or "",
             "ASN": asn_value or "",
+            "GAS": gas_value or "",
+            "GUEST_NAME": guest_name or "",
             "ENV_RAW": env_value_raw or "",
             "ENV_SCOPE": env_value or "",
             "old_groups": "",
@@ -238,6 +461,8 @@ def build_scope_report(
         host_row["old_groups"] = join_sorted(old_groups)
         host_row["new_groups"] = join_sorted(new_groups)
         host_row["other_groups"] = join_sorted(other_groups)
+
+    mapping_plan_rows = _build_mapping_plan_rows(old_bucket, new_bucket)
 
     action_rows: List[Dict[str, Any]] = []
     recipient_usergroup_ids: Set[str] = set()
@@ -381,8 +606,10 @@ def build_scope_report(
         "env_policy": f"{config.ENV_PROD_LABEL} => {config.ENV_PROD_LABEL}; everything else => {config.ENV_NONPROD_LABEL}",
         "hosts_in_scope": len(scope_hosts),
         "hosts_skipped_env": len(scope_hosts_skipped_env),
+        "unknown_hosts": len(unknown_rows),
         "old_groups": len(old_bucket),
         "new_groups": len(new_bucket),
+        "mapping_plan_rows": len(mapping_plan_rows),
         "actions": len(action_rows),
         "usergroups": len(usergroup_rows),
         "maintenances": len(maintenance_rows),
@@ -390,10 +617,12 @@ def build_scope_report(
 
     return {
         "summary": summary,
+        "unknown_hosts": unknown_rows,
         "hosts": scope_hosts,
         "hosts_skipped_env": scope_hosts_skipped_env,
         "groups_old": _group_bucket_rows(old_bucket, config.GROUP_SAMPLE_HOSTS),
         "groups_new": _group_bucket_rows(new_bucket, config.GROUP_SAMPLE_HOSTS),
+        "mapping_plan": mapping_plan_rows,
         "actions": action_rows,
         "usergroups": usergroup_rows,
         "maintenances": maintenance_rows,

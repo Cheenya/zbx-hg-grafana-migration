@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 class BackupMeta:
     created_at: str
     version: str = "2.0"
-    inventory_path: str = ""
+    impact_plan_path: str = ""
     zabbix_url: str = ""
     scope_as: List[str] = field(default_factory=list)
     scope_envs: List[str] = field(default_factory=list)
@@ -62,7 +62,7 @@ class MaintenanceBackup:
 @dataclass
 class BackupData:
     meta: BackupMeta
-    inventory: Dict[str, Any] = field(default_factory=dict)
+    impact_plan: Dict[str, Any] = field(default_factory=dict)
     hostgroups: List[HostGroupBackup] = field(default_factory=list)
     hosts: List[HostBackup] = field(default_factory=list)
     actions: List[ActionBackup] = field(default_factory=list)

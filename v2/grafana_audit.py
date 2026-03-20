@@ -66,7 +66,6 @@ def collect_grafana_rows(
         conn.base_url,
         conn.username,
         conn.password,
-        conn.token,
         timeout_sec=int(config.HTTP_TIMEOUT_SEC),
     )
     dashboards = api.list_dashboards()

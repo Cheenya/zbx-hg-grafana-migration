@@ -36,7 +36,7 @@ def load_backup(path: str) -> BackupData:
 
     return BackupData(
         meta=BackupMeta(**(raw.get("meta") or {})),
-        inventory=raw.get("inventory") or {},
+        impact_plan=raw.get("impact_plan") or raw.get("inventory") or {},
         hostgroups=[HostGroupBackup(**item) for item in (raw.get("hostgroups") or [])],
         hosts=[HostBackup(**item) for item in (raw.get("hosts") or [])],
         actions=[ActionBackup(**item) for item in (raw.get("actions") or [])],

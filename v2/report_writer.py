@@ -24,10 +24,12 @@ def save_inventory_json(report: Dict[str, Any], path: str) -> None:
         },
         "summary": report["summary"],
         "inventory": report["inventory"],
+        "unknown_hosts": report["unknown_hosts"],
         "hosts": report["hosts"],
         "hosts_skipped_env": report["hosts_skipped_env"],
         "groups_old": report["groups_old"],
         "groups_new": report["groups_new"],
+        "mapping_plan": report["mapping_plan"],
         "actions": report["actions"],
         "usergroups": report["usergroups"],
         "maintenances": report["maintenances"],
@@ -51,18 +53,25 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
         summary_ws.append([key, rendered])
     autosize_columns(summary_ws)
 
+    unknown_ws = wb.create_sheet("UNKNOWN_HOSTS")
+    _append_rows(
+        unknown_ws,
+        report["unknown_hosts"],
+        ["hostid", "host", "name", "status", "AS", "ASN", "GAS", "GUEST_NAME", "ENV_RAW", "ENV_SCOPE", "groups", "unknown_reasons"],
+    )
+
     hosts_ws = wb.create_sheet("HOSTS")
     _append_rows(
         hosts_ws,
         report["hosts"],
-        ["hostid", "host", "name", "status", "AS", "ASN", "ENV_RAW", "ENV_SCOPE", "old_groups", "new_groups", "other_groups"],
+        ["hostid", "host", "name", "status", "AS", "ASN", "GAS", "GUEST_NAME", "ENV_RAW", "ENV_SCOPE", "old_groups", "new_groups", "other_groups"],
     )
 
     skipped_ws = wb.create_sheet("HOSTS_SKIPPED_ENV")
     _append_rows(
         skipped_ws,
         report["hosts_skipped_env"],
-        ["hostid", "host", "name", "status", "AS", "ASN", "ENV_RAW", "ENV_SCOPE", "skip_reason"],
+        ["hostid", "host", "name", "status", "AS", "ASN", "GAS", "GUEST_NAME", "ENV_RAW", "ENV_SCOPE", "skip_reason"],
     )
 
     old_ws = wb.create_sheet("GROUPS_OLD")
@@ -70,6 +79,35 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
 
     new_ws = wb.create_sheet("GROUPS_NEW")
     _append_rows(new_ws, report["groups_new"], ["group_name", "groupid", "hosts_count", "as_values", "env_values", "sample_hosts"])
+
+    mapping_ws = wb.create_sheet("MAPPING_PLAN")
+    _append_rows(
+        mapping_ws,
+        report["mapping_plan"],
+        [
+            "selected",
+            "AS",
+            "old_group",
+            "old_groupid",
+            "new_group",
+            "new_groupid",
+            "candidate_rank",
+            "candidate_count",
+            "intersection",
+            "old_hosts_count",
+            "new_hosts_count",
+            "old_coverage",
+            "new_coverage",
+            "jaccard",
+            "old_envs",
+            "new_envs",
+            "env_relation",
+            "top1_new_conflict",
+            "manual_required",
+            "status",
+            "comment",
+        ],
+    )
 
     actions_ws = wb.create_sheet("ACTIONS")
     _append_rows(

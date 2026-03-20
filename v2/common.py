@@ -122,14 +122,27 @@ def build_scope_part(scope_as: Sequence[str], scope_envs: Sequence[str]) -> str:
     return "_".join(scope_chunks)
 
 
-def build_output_paths(scope_as: Sequence[str], scope_envs: Sequence[str]) -> Tuple[str, str]:
+def build_artifact_path(
+    prefix: str,
+    scope_as: Sequence[str],
+    scope_envs: Sequence[str],
+    extension: str,
+    timestamp: Optional[str] = None,
+) -> str:
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
     scope_part = build_scope_part(scope_as, scope_envs)
-    base_name = f"{config.OUTPUT_PREFIX}_{scope_part}_{timestamp}"
+    ext = str(extension or "").strip()
+    if ext and not ext.startswith("."):
+        ext = f".{ext}"
+    return os.path.join(config.OUTPUT_DIR, f"{prefix}_{scope_part}_{stamp}{ext}")
+
+
+def build_output_paths(scope_as: Sequence[str], scope_envs: Sequence[str]) -> Tuple[str, str]:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return (
-        os.path.join(config.OUTPUT_DIR, f"{base_name}.xlsx"),
-        os.path.join(config.OUTPUT_DIR, f"{base_name}.json"),
+        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_envs, ".xlsx", timestamp=timestamp),
+        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_envs, ".json", timestamp=timestamp),
     )
 
 
