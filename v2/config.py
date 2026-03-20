@@ -33,6 +33,9 @@ SAVE_JSON_INVENTORY: bool = True
 TAG_AS: str = "AS"
 TAG_ASN: str = "ASN"
 TAG_ENV: str = "ENV"
+ENV_PROD_LABEL: str = "PROD"
+ENV_NONPROD_LABEL: str = "NONPROD"
+PROD_ENV_VALUES: tuple[str, ...] = ("PROD",)
 EXCLUDED_GROUP_PATTERNS: tuple[str, ...] = (
     r"^Maintenance-dc-enable$",
     r"^Maintenance-",

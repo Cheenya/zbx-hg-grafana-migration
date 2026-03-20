@@ -7,6 +7,7 @@ from api_clients import ZabbixAPI
 
 from . import config
 from .common import (
+    canonical_env_value,
     extract_action_groupids,
     extract_action_recipients,
     extract_active_media_sendto,
@@ -16,6 +17,7 @@ from .common import (
     is_old_group,
     join_sorted,
     normalize_lower_set,
+    normalize_scope_envs,
     normalize_values,
     resolve_tagfilter_tag,
     resolve_tagfilter_value,
@@ -127,7 +129,7 @@ def build_scope_report(
 ) -> Dict[str, Any]:
     scope_as_values = normalize_values(scope_as)
     scope_as_lower = normalize_lower_set(scope_as_values)
-    scope_env_values = normalize_values(scope_envs)
+    scope_env_values = normalize_scope_envs(scope_envs)
     scope_env_lower = normalize_lower_set(scope_env_values)
 
     if not scope_as_values:
@@ -169,7 +171,8 @@ def build_scope_report(
     for host in hosts:
         tags = host.get("tags") or []
         as_value = get_tag_value(tags, config.TAG_AS)
-        env_value = get_tag_value(tags, config.TAG_ENV)
+        env_value_raw = get_tag_value(tags, config.TAG_ENV)
+        env_value = canonical_env_value(env_value_raw)
         asn_value = get_tag_value(tags, config.TAG_ASN)
 
         if not as_value or as_value.strip().lower() not in scope_as_lower:
@@ -182,7 +185,8 @@ def build_scope_report(
             "status": str(host.get("status") or ""),
             "AS": as_value or "",
             "ASN": asn_value or "",
-            "ENV": env_value or "",
+            "ENV_RAW": env_value_raw or "",
+            "ENV_SCOPE": env_value or "",
             "old_groups": "",
             "new_groups": "",
             "other_groups": "",
@@ -306,7 +310,7 @@ def build_scope_report(
                 matching_filters.append(f"{tag_name}={tag_value}")
             elif tag_name == config.TAG_ASN and tag_value in scope_asn_values:
                 matching_filters.append(f"{tag_name}={tag_value}")
-            elif scope_env_lower and tag_name == config.TAG_ENV and tag_value.strip().lower() in scope_env_lower:
+            elif scope_env_lower and tag_name == config.TAG_ENV and canonical_env_value(tag_value).strip().lower() in scope_env_lower:
                 matching_filters.append(f"{tag_name}={tag_value}")
 
         usergroup_id = str(usergroup.get("usrgrpid") or "")
@@ -375,6 +379,7 @@ def build_scope_report(
     summary = {
         "scope_as": scope_as_values,
         "scope_envs": scope_env_values,
+        "env_policy": f"{config.ENV_PROD_LABEL} => {config.ENV_PROD_LABEL}; everything else => {config.ENV_NONPROD_LABEL}",
         "hosts_in_scope": len(scope_hosts),
         "hosts_skipped_env": len(scope_hosts_skipped_env),
         "old_groups": len(old_bucket),

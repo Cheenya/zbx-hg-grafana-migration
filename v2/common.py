@@ -27,6 +27,25 @@ def normalize_lower_set(values: Optional[Iterable[str]]) -> Set[str]:
     return {item.lower() for item in normalize_values(values)}
 
 
+def canonical_env_value(value: Optional[str]) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    upper = text.upper()
+    if upper in {item.upper() for item in config.PROD_ENV_VALUES}:
+        return config.ENV_PROD_LABEL
+    return config.ENV_NONPROD_LABEL
+
+
+def normalize_scope_envs(values: Optional[Iterable[str]]) -> List[str]:
+    out: List[str] = []
+    for value in values or []:
+        canonical = canonical_env_value(str(value))
+        if canonical and canonical not in out:
+            out.append(canonical)
+    return out
+
+
 def get_tag_value(tags: Sequence[Dict[str, Any]], tag_name: str) -> Optional[str]:
     for tag in tags or []:
         if str(tag.get("tag") or "") != tag_name:

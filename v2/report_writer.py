@@ -55,14 +55,14 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
     _append_rows(
         hosts_ws,
         report["hosts"],
-        ["hostid", "host", "name", "status", "AS", "ASN", "ENV", "old_groups", "new_groups", "other_groups"],
+        ["hostid", "host", "name", "status", "AS", "ASN", "ENV_RAW", "ENV_SCOPE", "old_groups", "new_groups", "other_groups"],
     )
 
     skipped_ws = wb.create_sheet("HOSTS_SKIPPED_ENV")
     _append_rows(
         skipped_ws,
         report["hosts_skipped_env"],
-        ["hostid", "host", "name", "status", "AS", "ASN", "ENV", "skip_reason"],
+        ["hostid", "host", "name", "status", "AS", "ASN", "ENV_RAW", "ENV_SCOPE", "skip_reason"],
     )
 
     old_ws = wb.create_sheet("GROUPS_OLD")
