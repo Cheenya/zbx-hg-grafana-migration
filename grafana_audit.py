@@ -50,9 +50,56 @@ def _walk_panels(panels: Sequence[Dict[str, Any]], path: str = "dashboard.panels
             yield from _walk_panels(nested, f"{panel_path}.panels")
 
 
-def _pattern_prefixes(as_value: str) -> List[str]:
-    lower = str(as_value or "").strip().lower()
-    return [f"bnk-{lower}", f"dom-{lower}"] if lower else []
+def _legacy_suffix(group_name: str) -> str:
+    text = str(group_name or "").strip()
+    if "-" not in text:
+        return ""
+    return text.split("-", 1)[1].strip()
+
+
+def _legacy_suffix_tokens(group_name: str) -> List[str]:
+    suffix = _legacy_suffix(group_name)
+    return [token.strip() for token in suffix.split("-") if token.strip()]
+
+
+def _common_prefix_tokens(groups: Sequence[str]) -> List[str]:
+    token_rows = [_legacy_suffix_tokens(item) for item in groups if _legacy_suffix_tokens(item)]
+    if not token_rows:
+        return []
+    prefix = list(token_rows[0])
+    for row in token_rows[1:]:
+        size = min(len(prefix), len(row))
+        shared: List[str] = []
+        for index in range(size):
+            if prefix[index].lower() != row[index].lower():
+                break
+            shared.append(prefix[index])
+        prefix = shared
+        if not prefix:
+            break
+    return prefix
+
+
+def _build_pattern_keys(scope_old_groups: Sequence[Dict[str, str]]) -> Dict[str, List[str]]:
+    by_as: Dict[str, Set[str]] = defaultdict(set)
+    for row in scope_old_groups:
+        as_value = str(row.get("AS") or "").strip()
+        group_name = str(row.get("name") or "").strip()
+        if as_value and group_name:
+            by_as[as_value].add(group_name)
+
+    out: Dict[str, List[str]] = {}
+    for as_value, names in by_as.items():
+        keys: Set[str] = set()
+        common_tokens = _common_prefix_tokens(sorted(names))
+        if common_tokens:
+            keys.add("-".join(common_tokens))
+        for name in names:
+            suffix = _legacy_suffix(name)
+            if suffix:
+                keys.add(suffix)
+        out[as_value] = sorted((key for key in keys if key), key=lambda item: (-len(item), item.lower()))
+    return out
 
 
 def _field_kind(json_path: str) -> str:
@@ -200,6 +247,7 @@ def _add_detail_row(counts: Dict[Tuple[str, ...], int], row: Dict[str, Any]) -> 
         str(row.get("reference_kind") or ""),
         str(row.get("match_type") or ""),
         str(row.get("matched_string") or ""),
+        str(row.get("pattern_key") or ""),
         str(row.get("source_text") or ""),
         str(row.get("json_path") or ""),
     )
@@ -289,6 +337,7 @@ def collect_grafana_report(
         as_value = str(row.get("AS") or "").strip()
         if name and as_value:
             exact_old[name].add(as_value)
+    pattern_keys_by_as = _build_pattern_keys(scope_old_groups)
 
     _log(log, f"grafana: scope_pairs={[(as_value, int(org_id)) for as_value, org_id in scope_pairs]}")
     _log(log, f"grafana: scope_old_groups={len(scope_old_groups)} unique_old_names={len(exact_old)}")
@@ -300,7 +349,12 @@ def collect_grafana_report(
         org_id_int = int(org_id or 0)
         exact_old_count = sum(1 for values in exact_old.values() if as_value in values)
         old_group_sample = sorted(name for name, values in exact_old.items() if as_value in values)[:10]
-        _log(log, f"grafana: start as={as_value} org_id={org_id_int} old_groups={exact_old_count} sample={old_group_sample}")
+        pattern_keys = pattern_keys_by_as.get(as_value) or []
+        _log(
+            log,
+            f"grafana: start as={as_value} org_id={org_id_int} old_groups={exact_old_count} "
+            f"sample={old_group_sample} pattern_keys={pattern_keys[:10]}",
+        )
         api = GrafanaAPI(
             conn.base_url,
             conn.username,
@@ -309,8 +363,7 @@ def collect_grafana_report(
             timeout_sec=int(config.HTTP_TIMEOUT_SEC),
         )
         dashboards = api.list_dashboards()
-        as_prefixes = _pattern_prefixes(as_value)
-        _log(log, f"grafana: as={as_value} org_id={org_id_int} dashboards={len(dashboards)} prefixes={as_prefixes}")
+        _log(log, f"grafana: as={as_value} org_id={org_id_int} dashboards={len(dashboards)} pattern_keys_count={len(pattern_keys)}")
         org_exact_hits = 0
         org_pattern_hits = 0
 
@@ -358,6 +411,7 @@ def collect_grafana_report(
                             "reference_kind": "direct_group_name",
                             "match_type": "OLD",
                             "matched_string": candidate,
+                            "pattern_key": "",
                             "source_text": text,
                             **context,
                         },
@@ -367,29 +421,32 @@ def collect_grafana_report(
 
                 if not _is_pattern_candidate(text, str(context.get("location_kind") or ""), str(context.get("field_kind") or "")):
                     continue
-                if not any(prefix in text_lower for prefix in as_prefixes):
-                    continue
                 if "bnk-" not in text_lower and "dom-" not in text_lower:
                     continue
+                matched_pattern_keys = [key for key in pattern_keys if key.lower() in text_lower]
+                if not matched_pattern_keys:
+                    continue
 
-                _add_detail_row(
-                    counts,
-                    {
-                        "AS": as_value,
-                        "grafana_org_id": str(int(org_id or 0)),
-                        "dashboard_uid": uid,
-                        "dashboard_title": dashboard_title,
-                        "folder_title": folder_title,
-                        "dashboard_url": dashboard_url,
-                        "reference_kind": "pattern_or_regex",
-                        "match_type": "OLD_PATTERN",
-                        "matched_string": text,
-                        "source_text": text,
-                        **context,
-                    },
-                )
-                dashboard_pattern_hits += 1
-                org_pattern_hits += 1
+                for pattern_key in matched_pattern_keys:
+                    _add_detail_row(
+                        counts,
+                        {
+                            "AS": as_value,
+                            "grafana_org_id": str(int(org_id or 0)),
+                            "dashboard_uid": uid,
+                            "dashboard_title": dashboard_title,
+                            "folder_title": folder_title,
+                            "dashboard_url": dashboard_url,
+                            "reference_kind": "pattern_or_regex",
+                            "match_type": "OLD_PATTERN",
+                            "matched_string": text,
+                            "pattern_key": pattern_key,
+                            "source_text": text,
+                            **context,
+                        },
+                    )
+                    dashboard_pattern_hits += 1
+                    org_pattern_hits += 1
 
             if dashboard_exact_hits or dashboard_pattern_hits:
                 _log(
@@ -425,8 +482,9 @@ def collect_grafana_report(
                 "reference_kind": key[14],
                 "match_type": key[15],
                 "matched_string": key[16],
-                "source_text": key[17],
-                "json_path": key[18],
+                "pattern_key": key[17],
+                "source_text": key[18],
+                "json_path": key[19],
                 "count": count,
             }
         )

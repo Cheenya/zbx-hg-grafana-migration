@@ -604,19 +604,12 @@ def build_scope_report(
     _log(log, f"zabbix: fetched maintenances={len(maintenances)}")
 
     groupid_to_name: Dict[str, str] = {}
-    grafana_old_groups: List[Dict[str, str]] = []
     for group in hostgroups:
         if group.get("groupid") is None or not group.get("name"):
             continue
         group_name = str(group["name"])
         group_id = str(group["groupid"])
         groupid_to_name[group_id] = group_name
-        if is_excluded_group(group_name):
-            continue
-        matched_as = [as_value for as_value in scope_as_values if _is_old_group_for_as(group_name, as_value)]
-        for as_value in matched_as:
-            grafana_old_groups.append({"groupid": group_id, "name": group_name, "kind": "OLD", "AS": as_value})
-    _log(log, f"zabbix: grafana_old_groups_catalog={len(grafana_old_groups)}")
 
     users_by_id: Dict[str, Dict[str, Any]] = {}
     user_media_by_id: Dict[str, List[str]] = {}
@@ -1055,12 +1048,14 @@ def build_scope_report(
 
     grafana_old_groups_dedup: List[Dict[str, str]] = []
     grafana_old_seen: Set[tuple[str, str]] = set()
-    for row in sorted(grafana_old_groups, key=lambda item: (str(item["AS"]).lower(), str(item["name"]).lower(), str(item["groupid"]))):
-        signature = (str(row["AS"]), str(row["groupid"]))
-        if signature in grafana_old_seen:
-            continue
-        grafana_old_seen.add(signature)
-        grafana_old_groups_dedup.append(row)
+    for group_name, data in sorted(old_bucket.items(), key=lambda item: item[0].lower()):
+        group_id = str(data.get("groupid") or "")
+        for as_value in sorted({str(item).strip() for item in data.get("as_values") or set() if str(item).strip()}, key=str.lower):
+            signature = (as_value, group_id)
+            if signature in grafana_old_seen:
+                continue
+            grafana_old_seen.add(signature)
+            grafana_old_groups_dedup.append({"groupid": group_id, "name": group_name, "kind": "OLD", "AS": as_value})
     _log(log, f"zabbix: grafana_old_groups_dedup={len(grafana_old_groups_dedup)}")
 
     inventory_hostgroups = [

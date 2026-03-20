@@ -82,6 +82,7 @@ def write_impact_plan_xlsx(data: Dict[str, Any], path: str) -> None:
         "old_group",
         "new_group",
         "matched_string",
+        "pattern_key",
         "manual_required",
         "details",
     ]
@@ -358,6 +359,7 @@ def build_impact_plan(
                     "old_group": mapping["old_group"],
                     "new_group": mapping["new_group"],
                     "matched_string": matched_string,
+                    "pattern_key": str(row.get("pattern_key") or ""),
                     "manual_required": "",
                     "details": "",
                 }
@@ -402,6 +404,7 @@ def build_impact_plan(
                 "old_group": old_group,
                 "new_group": new_group,
                 "matched_string": matched_string,
+                "pattern_key": str(row.get("pattern_key") or ""),
                 "manual_required": "yes",
                 "details": details,
             }

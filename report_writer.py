@@ -94,6 +94,7 @@ GRAFANA_DETAIL_HEADERS = [
     "reference_kind",
     "match_type",
     "matched_string",
+    "pattern_key",
     "source_text",
     "json_path",
     "count",
