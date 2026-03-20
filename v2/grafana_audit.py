@@ -4,9 +4,8 @@ import re
 from collections import defaultdict
 from typing import Any, Dict, List, Sequence, Set, Tuple
 
-from api_clients import GrafanaAPI
-
 from . import config
+from .api_clients import GrafanaAPI
 from .common import normalize_values
 
 

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import argparse
 
-from api_clients import ZabbixAPI
-
 from . import config
+from .api_clients import ZabbixAPI
 from .common import build_output_paths, normalize_values
 from .grafana_audit import collect_grafana_rows
 from .report_writer import save_inventory_json, write_workbook

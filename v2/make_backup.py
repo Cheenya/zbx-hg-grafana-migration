@@ -5,9 +5,8 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Sequence
 
-from api_clients import ZabbixAPI
-
 from . import config
+from .api_clients import ZabbixAPI
 from .backup_io import save_backup
 from .backup_model import (
     ActionBackup,

@@ -3,9 +3,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, List, Sequence, Set
 
-from api_clients import ZabbixAPI
-
 from . import config
+from .api_clients import ZabbixAPI
 from .common import (
     canonical_env_value,
     extract_action_groupids,

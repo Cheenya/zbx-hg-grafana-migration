@@ -74,6 +74,8 @@ python -m v2.verify_backup
   Логика чтения Zabbix и построения read-only inventory.
 - `grafana_audit.py`
   Логика чтения Grafana dashboards и поиска совпадений.
+- `api_clients.py`
+  HTTP-клиенты только для `v2`.
 - `common.py`
   Общие утилиты.
 - `report_writer.py`
