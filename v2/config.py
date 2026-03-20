@@ -24,6 +24,7 @@ MONITORED_HOSTS_ONLY: bool = False
 ENABLE_GRAFANA: bool = True
 OUTPUT_DIR: str = "v2_output"
 OUTPUT_PREFIX: str = "scope_audit_v2"
+GRAFANA_REPORT_PREFIX: str = "grafana_audit_v2"
 MAPPING_PLAN_PREFIX: str = "mapping_plan_v2"
 IMPACT_PLAN_PREFIX: str = "impact_plan_v2"
 BACKUP_PREFIX: str = "scope_backup_v2"
