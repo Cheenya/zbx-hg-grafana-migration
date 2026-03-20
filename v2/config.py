@@ -25,8 +25,14 @@ MONITORED_HOSTS_ONLY: bool = False
 ENABLE_GRAFANA: bool = True
 OUTPUT_DIR: str = "v2_output"
 OUTPUT_PREFIX: str = "scope_audit_v2"
+BACKUP_PREFIX: str = "scope_backup_v2"
 GROUP_SAMPLE_HOSTS: int = 10
 SAVE_JSON_INVENTORY: bool = True
+
+
+# Входные файлы для backup/verify v2.
+SOURCE_INVENTORY_JSON: str = ""
+SOURCE_BACKUP_FILE: str = ""
 
 
 # Теги и исключения.

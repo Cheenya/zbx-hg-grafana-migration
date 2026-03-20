@@ -4,27 +4,28 @@
 
 Каталог `v2/` — это новый, упрощенный и изолированный контур для подготовки миграции.
 
-Его текущая задача одна: **сделать понятный read-only аудит** по выбранному scope, чтобы дальше на этой базе строить:
-- `backup v2`
-- `verify_backup v2`
-- `migrate v2`
-- `postcheck v2`
+Его текущая задача: **дать безопасный подготовительный контур** по выбранному scope, который уже умеет:
+- делать read-only аудит;
+- собирать backup по готовому inventory;
+- проверять backup на полное покрытие inventory.
 
 На текущем этапе `v2`:
 - **ничего не меняет** в Zabbix;
 - **ничего не меняет** в Grafana;
-- только читает данные и сохраняет отчеты.
+- только читает данные и сохраняет артефакты подготовки.
 
 
 ## 2. Что уже реализовано
 
-Точка входа:
+Точки входа:
 
 ```bash
 python -m v2.audit_scope
+python -m v2.make_backup
+python -m v2.verify_backup
 ```
 
-Скрипт делает следующее:
+`python -m v2.audit_scope`
 1. Подключается к Zabbix.
 2. Берет scope из `v2/config.py`.
 3. Собирает инвентаризацию:
@@ -42,6 +43,26 @@ python -m v2.audit_scope
    - `xlsx` отчет;
    - `json` inventory.
 
+`python -m v2.make_backup`
+1. Читает путь `SOURCE_INVENTORY_JSON` из `v2/config.py`.
+2. Загружает `json inventory`, созданный `audit_scope`.
+3. Достает из inventory точные ID сущностей:
+   - host-groups;
+   - hosts;
+   - actions;
+   - usergroups;
+   - users;
+   - maintenances.
+4. Запрашивает эти сущности из Zabbix по ID.
+5. Проверяет полное покрытие inventory.
+6. Сохраняет backup в `json.gz`.
+
+`python -m v2.verify_backup`
+1. Читает `SOURCE_INVENTORY_JSON`.
+2. Читает `SOURCE_BACKUP_FILE`.
+3. Сравнивает scope и наборы ID между inventory и backup.
+4. Падает с ошибкой, если есть missing или extra объекты.
+
 
 ## 3. Структура каталога `v2`
 
@@ -57,6 +78,14 @@ python -m v2.audit_scope
   Общие утилиты.
 - `report_writer.py`
   Запись `xlsx` и `json`.
+- `backup_model.py`
+  Dataclass-модель backup-файла.
+- `backup_io.py`
+  Чтение и запись backup-файла.
+- `make_backup.py`
+  Сбор backup по `json inventory`.
+- `verify_backup.py`
+  Сверка backup против `json inventory`.
 - `README.md`
   Короткая памятка.
 - `MANUAL.md`
@@ -127,6 +156,7 @@ OUTPUT_DIR = "v2_output"
 OUTPUT_PREFIX = "scope_audit_v2"
 GROUP_SAMPLE_HOSTS = 10
 SAVE_JSON_INVENTORY = True
+BACKUP_PREFIX = "scope_backup_v2"
 ```
 
 Рекомендации:
@@ -134,7 +164,23 @@ SAVE_JSON_INVENTORY = True
 - `ENABLE_GRAFANA = True`, если Grafana должна участвовать в precheck;
 - `OUTPUT_DIR` менять только если нужен другой каталог артефактов.
 
-### 4.5. Теги
+### 4.5. Входные файлы для backup/verify
+
+```python
+SOURCE_INVENTORY_JSON = ""
+SOURCE_BACKUP_FILE = ""
+```
+
+`SOURCE_INVENTORY_JSON`
+- путь к `json`, который создал `python -m v2.audit_scope`;
+- обязателен для `python -m v2.make_backup`;
+- обязателен для `python -m v2.verify_backup`.
+
+`SOURCE_BACKUP_FILE`
+- путь к backup-файлу, который создал `python -m v2.make_backup`;
+- обязателен для `python -m v2.verify_backup`.
+
+### 4.6. Теги
 
 ```python
 TAG_AS = "AS"
@@ -144,7 +190,7 @@ TAG_ENV = "ENV"
 
 Если в Zabbix используются другие имена тегов, менять нужно здесь.
 
-### 4.6. Логика нормализации ENV
+### 4.7. Логика нормализации ENV
 
 В `v2/config.py` зафиксированы значения:
 
@@ -167,7 +213,7 @@ PROD_ENV_VALUES = ("PROD",)
 - `UAT` -> `NONPROD`
 - `PREPROD` -> `NONPROD`
 
-### 4.7. Исключаемые группы
+### 4.8. Исключаемые группы
 
 ```python
 EXCLUDED_GROUP_PATTERNS = (...)
@@ -220,6 +266,25 @@ SCOPE_ENVS = ("NONPROD",)
 python -m v2.audit_scope
 ```
 
+### 6.4. Сбор backup по inventory
+
+1. Выполнить `python -m v2.audit_scope`.
+2. Вписать путь к созданному `json` в `SOURCE_INVENTORY_JSON`.
+3. Запустить:
+
+```bash
+python -m v2.make_backup
+```
+
+### 6.5. Проверка backup
+
+1. Вписать путь к backup-файлу в `SOURCE_BACKUP_FILE`.
+2. Запустить:
+
+```bash
+python -m v2.verify_backup
+```
+
 
 ## 7. Что будет создано
 
@@ -231,11 +296,13 @@ python -m v2.audit_scope
 
 - `<OUTPUT_PREFIX>_<scope>_<timestamp>.xlsx`
 - `<OUTPUT_PREFIX>_<scope>_<timestamp>.json`
+- `<BACKUP_PREFIX>_<scope>_<timestamp>.json.gz`
 
 Пример:
 
 - `v2_output/scope_audit_v2_dom_itmon_NONPROD_20260320_120000.xlsx`
 - `v2_output/scope_audit_v2_dom_itmon_NONPROD_20260320_120000.json`
+- `v2_output/scope_backup_v2_dom_itmon_NONPROD_20260320_121500.json.gz`
 
 
 ## 8. Что лежит в XLSX
@@ -441,22 +508,64 @@ JSON — это машинно-читаемая версия отчета.
 Там должен быть понятный и конечный список того, что в будущем пойдет в backup.
 
 
-## 11. Ограничения текущей версии
+## 11. Как работает backup v2
+
+`backup v2` строится по точным ID из `json inventory`, а не по догадкам и не по повторному вычислению scope.
+
+Что именно попадает в backup:
+- host-groups из `inventory.hostgroups`;
+- hosts из `inventory.hostids`;
+- actions из `inventory.actionids`;
+- usergroups из `inventory.usergroupids`;
+- users из `inventory.userids`;
+- maintenances из `inventory.maintenanceids`.
+
+Что важно:
+- backup не выбирает scope сам;
+- backup не пересчитывает связи заново;
+- backup берет только то, что уже зафиксировано в `json inventory`.
+
+Если Zabbix не вернул хотя бы один объект из inventory, `make_backup` завершится `RuntimeError`.
+
+
+## 12. Как работает verify backup
+
+`verify_backup` не ходит в Zabbix повторно. Он сравнивает два локальных артефакта:
+- `SOURCE_INVENTORY_JSON`;
+- `SOURCE_BACKUP_FILE`.
+
+Он проверяет:
+- `scope_as`;
+- `scope_envs`;
+- набор `hostgroups`;
+- набор `hosts`;
+- набор `actions`;
+- набор `usergroups`;
+- набор `users`;
+- набор `maintenances`.
+
+Проверка считается успешной только если:
+- нет missing ID;
+- нет extra ID;
+- scope совпадает.
+
+
+## 13. Ограничения текущей версии
 
 Важно понимать, чего `v2` пока не делает:
 
 1. Не строит автоматический migration plan.
 2. Не говорит, какой OLD надо менять на какой NEW.
 3. Не блокирует ambiguous-ситуации автоматически.
-4. Не делает backup.
-5. Не делает restore.
-6. Не меняет dashboards.
-7. Не применяет изменения в Zabbix.
+4. Не делает restore.
+5. Не применяет изменения в Zabbix.
+6. Не применяет изменения в Grafana.
+7. Не проверяет содержимое backup на семантическую корректность полей, кроме состава scope и ID.
 
-Это сознательное ограничение. Сначала нужна честная инвентаризация, а не “умная” автоматизация.
+Это сознательное ограничение. Сначала нужна честная инвентаризация и проверяемый backup, а не “умная” автоматизация.
 
 
-## 12. Рекомендуемый рабочий процесс
+## 14. Рекомендуемый рабочий процесс
 
 ### Шаг 1. Pilot audit по NONPROD
 
@@ -483,35 +592,45 @@ python -m v2.audit_scope
 - maintenances;
 - Grafana matches.
 
-### Шаг 3. Проектирование backup v2
+### Шаг 3. Backup v2
 
-На основе `json inventory` определить:
-- какие объекты обязаны попасть в backup;
-- по каким ID backup должен проверяться;
-- какие связи надо валидировать до миграции.
+В `v2/config.py` указать:
 
-### Шаг 4. Backup v2
+```python
+SOURCE_INVENTORY_JSON = r"v2_output\\scope_audit_v2_dom_itmon_NONPROD_20260320_120000.json"
+```
 
-Будущий `backup v2` должен собирать данные **не по догадке**, а по `json inventory`.
+Запуск:
 
-### Шаг 5. Verify backup v2
+```bash
+python -m v2.make_backup
+```
 
-Будущий `verify_backup v2` должен подтверждать:
-- coverage всех ожидаемых объектов;
-- корректность ссылок и ID;
-- соответствие scope.
+### Шаг 4. Verify backup v2
 
-### Шаг 6. Только потом migrate v2
+В `v2/config.py` указать:
+
+```python
+SOURCE_BACKUP_FILE = r"v2_output\\scope_backup_v2_dom_itmon_NONPROD_20260320_121500.json.gz"
+```
+
+Запуск:
+
+```bash
+python -m v2.verify_backup
+```
+
+### Шаг 5. Только потом проектировать migrate v2
 
 И только после этого можно делать:
+- restore v2;
 - dry-run на `NONPROD`;
 - apply на `NONPROD`;
 - postcheck;
-- restore test;
 - и только потом выходить к `PROD`.
 
 
-## 13. Типовые проблемы
+## 15. Типовые проблемы
 
 ### Ошибка: scope пустой
 
@@ -550,13 +669,16 @@ python -m v2.audit_scope
 Такие места как раз и нужны для ручного анализа перед миграцией.
 
 
-## 14. Что делать дальше
+## 16. Что делать дальше
 
-После того как этот аудит станет стабильным и понятным, следующий модуль должен быть:
+После того как связка `audit -> backup -> verify` станет стабильной и понятной, следующий модуль должен быть:
 
-- `backup v2`
+- `restore v2`
+- `migrate v2`
 
-Причем строить его нужно не “по текущим хостам”, а по `json inventory`, который уже создает `audit_scope v2`.
+Причем строить их нужно от тех же артефактов:
+- `json inventory` из `audit_scope v2`;
+- проверенного backup из `make_backup v2`.
 
 Только так получится:
 - предсказуемый scope;
