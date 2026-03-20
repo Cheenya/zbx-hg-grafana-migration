@@ -172,7 +172,11 @@ def build_impact_plan(
 ) -> Dict[str, Any]:
     inventory = audit_report.get("inventory") or {}
     scope_as = inventory.get("scope_as") or []
-    scope_envs = inventory.get("scope_envs") or []
+    scope_env = str(inventory.get("scope_env") or "").strip()
+    if not scope_env:
+        legacy_scope_envs = inventory.get("scope_envs") or []
+        if legacy_scope_envs:
+            scope_env = str(legacy_scope_envs[0] or "").strip()
 
     mappings_by_oldid = {str(item["old_groupid"]): dict(item) for item in selected_mappings}
     mappings_by_oldname = {str(item["old_group"]): dict(item) for item in selected_mappings}
@@ -392,7 +396,7 @@ def build_impact_plan(
 
     summary = {
         "scope_as": scope_as,
-        "scope_envs": scope_envs,
+        "scope_env": scope_env,
         "selected_mappings": len(selected_mappings),
         "zabbix_changes": len(zabbix_changes),
         "grafana_changes": len(grafana_changes),

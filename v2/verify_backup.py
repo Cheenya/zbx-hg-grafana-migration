@@ -43,11 +43,16 @@ def main() -> int:
     backup = load_backup(backup_path)
 
     failures: List[str] = []
+    summary_scope_env = str(summary.get("scope_env") or "").strip()
+    if not summary_scope_env:
+        legacy_scope_envs = summary.get("scope_envs") or []
+        if legacy_scope_envs:
+            summary_scope_env = str(legacy_scope_envs[0] or "").strip()
 
     if _sorted_ids(backup.meta.scope_as) != _sorted_ids(summary.get("scope_as") or []):
         failures.append("scope_as mismatch")
-    if _sorted_ids(backup.meta.scope_envs) != _sorted_ids(summary.get("scope_envs") or []):
-        failures.append("scope_envs mismatch")
+    if str(backup.meta.scope_env or "").strip() != summary_scope_env:
+        failures.append("scope_env mismatch")
 
     checks = [
         ("hostgroups", [str(item.get("groupid") or "") for item in (backup_scope.get("hostgroups") or [])], [item.groupid for item in backup.hostgroups]),

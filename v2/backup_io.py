@@ -34,8 +34,16 @@ def load_backup(path: str) -> BackupData:
         with open(path, "r", encoding="utf-8") as handle:
             raw = json.load(handle)
 
+    meta_raw = raw.get("meta") or {}
+    if "scope_env" not in meta_raw:
+        scope_envs = meta_raw.get("scope_envs") or []
+        if isinstance(scope_envs, list) and scope_envs:
+            meta_raw["scope_env"] = str(scope_envs[0] or "")
+        else:
+            meta_raw["scope_env"] = ""
+
     return BackupData(
-        meta=BackupMeta(**(raw.get("meta") or {})),
+        meta=BackupMeta(**meta_raw),
         impact_plan=raw.get("impact_plan") or raw.get("inventory") or {},
         hostgroups=[HostGroupBackup(**item) for item in (raw.get("hostgroups") or [])],
         hosts=[HostBackup(**item) for item in (raw.get("hosts") or [])],

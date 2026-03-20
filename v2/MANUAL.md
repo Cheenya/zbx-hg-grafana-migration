@@ -75,11 +75,11 @@ GRAFANA_PASSWORD = ""
 
 ```python
 SCOPE_AS: tuple[str, ...] = ()
-SCOPE_ENVS: tuple[str, ...] = ()
+SCOPE_ENV: str = ""
 ```
 
 - `SCOPE_AS` обязателен;
-- `SCOPE_ENVS` опционален.
+- `SCOPE_ENV` опционален.
 
 Логика `ENV` фиксированная:
 - `PROD` -> `PROD`
@@ -89,7 +89,38 @@ SCOPE_ENVS: tuple[str, ...] = ()
 
 ```python
 SCOPE_AS = ("your_as",)
-SCOPE_ENVS = ("NONPROD",)
+SCOPE_ENV = "NONPROD"
+```
+
+Формат заполнения:
+- одна AS:
+
+```python
+SCOPE_AS = ("dom_itmon",)
+```
+
+- несколько AS:
+
+```python
+SCOPE_AS = ("dom_itmon", "risk_calc")
+```
+
+- все среды:
+
+```python
+SCOPE_ENV = ""
+```
+
+- только NONPROD:
+
+```python
+SCOPE_ENV = "NONPROD"
+```
+
+- только PROD:
+
+```python
+SCOPE_ENV = "PROD"
 ```
 
 ### 4.4. Runtime
@@ -197,7 +228,7 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - показывает `AS`, `ASN`, `GAS`, `GUEST_NAME`, `ENV_RAW`, `ENV_SCOPE`.
 
 `HOSTS_SKIPPED_ENV`
-- хосты выбранной AS, исключённые по `SCOPE_ENVS`.
+- хосты выбранной AS, исключённые по `SCOPE_ENV`.
 
 `GROUPS_OLD`
 - legacy host-groups в scope.
@@ -320,7 +351,7 @@ MAPPING_FORBID_ENV_MISMATCH = True
 
 `verify_backup.py` сверяет:
 - `scope_as`;
-- `scope_envs`;
+- `scope_env`;
 - hostgroups;
 - hosts;
 - actions;
@@ -358,7 +389,7 @@ Grafana в backup не входит.
 
 ```python
 SCOPE_AS = ("your_as",)
-SCOPE_ENVS = ("NONPROD",)
+SCOPE_ENV = "NONPROD"
 ```
 
 Запуск:
@@ -473,7 +504,7 @@ python v2/restore_backup.py
 Проверь:
 - `TAG_AS`;
 - `SCOPE_AS`;
-- `SCOPE_ENVS`;
+- `SCOPE_ENV`;
 - `MONITORED_HOSTS_ONLY`.
 
 ### В `MAPPING_PLAN` нет кандидатов

@@ -37,13 +37,8 @@ def canonical_env_value(value: Optional[str]) -> str:
     return config.ENV_NONPROD_LABEL
 
 
-def normalize_scope_envs(values: Optional[Iterable[str]]) -> List[str]:
-    out: List[str] = []
-    for value in values or []:
-        canonical = canonical_env_value(str(value))
-        if canonical and canonical not in out:
-            out.append(canonical)
-    return out
+def normalize_scope_env(value: Optional[str]) -> str:
+    return canonical_env_value(value)
 
 
 def get_tag_value(tags: Sequence[Dict[str, Any]], tag_name: str) -> Optional[str]:
@@ -100,10 +95,10 @@ def autosize_columns(ws, min_width: int = 10, max_width: int = 80) -> None:
         ws.column_dimensions[letter].width = max(min_width, min(max_width, max_len + 2))
 
 
-def build_scope_part(scope_as: Sequence[str], scope_envs: Sequence[str]) -> str:
+def build_scope_part(scope_as: Sequence[str], scope_env: str) -> str:
     scope_chunks: List[str] = []
     as_values = normalize_values(scope_as)
-    env_values = normalize_values(scope_envs)
+    env_value = str(scope_env or "").strip()
 
     if as_values:
         if len(as_values) <= 3:
@@ -113,11 +108,8 @@ def build_scope_part(scope_as: Sequence[str], scope_envs: Sequence[str]) -> str:
     else:
         scope_chunks.append("NOAS")
 
-    if env_values:
-        if len(env_values) <= 3:
-            scope_chunks.append("-".join(re.sub(r"[^A-Za-z0-9_-]", "_", item) for item in env_values))
-        else:
-            scope_chunks.append(f"ENV{len(env_values)}")
+    if env_value:
+        scope_chunks.append(re.sub(r"[^A-Za-z0-9_-]", "_", env_value))
 
     return "_".join(scope_chunks)
 
@@ -125,24 +117,24 @@ def build_scope_part(scope_as: Sequence[str], scope_envs: Sequence[str]) -> str:
 def build_artifact_path(
     prefix: str,
     scope_as: Sequence[str],
-    scope_envs: Sequence[str],
+    scope_env: str,
     extension: str,
     timestamp: Optional[str] = None,
 ) -> str:
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     stamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
-    scope_part = build_scope_part(scope_as, scope_envs)
+    scope_part = build_scope_part(scope_as, scope_env)
     ext = str(extension or "").strip()
     if ext and not ext.startswith("."):
         ext = f".{ext}"
     return os.path.join(config.OUTPUT_DIR, f"{prefix}_{scope_part}_{stamp}{ext}")
 
 
-def build_output_paths(scope_as: Sequence[str], scope_envs: Sequence[str]) -> Tuple[str, str]:
+def build_output_paths(scope_as: Sequence[str], scope_env: str) -> Tuple[str, str]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return (
-        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_envs, ".xlsx", timestamp=timestamp),
-        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_envs, ".json", timestamp=timestamp),
+        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp),
+        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".json", timestamp=timestamp),
     )
 
 

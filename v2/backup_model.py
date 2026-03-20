@@ -11,7 +11,7 @@ class BackupMeta:
     impact_plan_path: str = ""
     zabbix_url: str = ""
     scope_as: List[str] = field(default_factory=list)
-    scope_envs: List[str] = field(default_factory=list)
+    scope_env: str = ""
 
 
 @dataclass

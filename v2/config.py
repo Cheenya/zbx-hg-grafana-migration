@@ -15,7 +15,7 @@ GRAFANA_PASSWORD = ""
 
 # Scope нового контура.
 SCOPE_AS: tuple[str, ...] = ()
-SCOPE_ENVS: tuple[str, ...] = ()
+SCOPE_ENV: str = ""
 
 
 # Runtime v2.

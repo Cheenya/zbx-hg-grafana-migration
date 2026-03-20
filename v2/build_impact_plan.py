@@ -26,13 +26,17 @@ def main() -> int:
     audit_report = load_audit_report(audit_json_path)
     inventory = audit_report.get("inventory") or {}
     scope_as = normalize_values(inventory.get("scope_as") or [])
-    scope_envs = normalize_values(inventory.get("scope_envs") or [])
+    scope_env = str(inventory.get("scope_env") or "").strip()
+    if not scope_env:
+        legacy_scope_envs = inventory.get("scope_envs") or []
+        if legacy_scope_envs:
+            scope_env = str(legacy_scope_envs[0] or "").strip()
     mapping_rows = load_mapping_plan_rows(mapping_plan_path)
     selected_mappings = get_selected_mappings(mapping_rows)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_xlsx = build_artifact_path(config.IMPACT_PLAN_PREFIX, scope_as, scope_envs, ".xlsx", timestamp=timestamp)
-    default_json = build_artifact_path(config.IMPACT_PLAN_PREFIX, scope_as, scope_envs, ".json", timestamp=timestamp)
+    default_xlsx = build_artifact_path(config.IMPACT_PLAN_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp)
+    default_json = build_artifact_path(config.IMPACT_PLAN_PREFIX, scope_as, scope_env, ".json", timestamp=timestamp)
     out_xlsx = args.out_xlsx or default_xlsx
     out_json = args.out_json or default_json
 

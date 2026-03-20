@@ -14,7 +14,7 @@
 
 Что делает аудит:
 - читает Zabbix без изменений;
-- берёт scope по `SCOPE_AS` и опционально по каноническому `SCOPE_ENVS`;
+- берёт scope по `SCOPE_AS` и опционально по каноническому `SCOPE_ENV`;
 - учитывает `AS`, `ASN`, `ENV`, `GAS`, `GUEST-NAME`;
 - отдельно показывает `UNKNOWN`-хосты;
 - строит `MAPPING_PLAN` c кандидатами `OLD -> NEW`;
@@ -65,8 +65,15 @@
 - `v2` пока не применяет миграцию;
 - `v2` пока только готовит и проверяет change-scope.
 
+Формат scope:
+- одна AS: `SCOPE_AS = ("dom_itmon",)`
+- несколько AS: `SCOPE_AS = ("dom_itmon", "risk_calc")`
+- все env: `SCOPE_ENV = ""`
+- только nonprod: `SCOPE_ENV = "NONPROD"`
+- только prod: `SCOPE_ENV = "PROD"`
+
 Минимальный поток:
-1. В `v2/config.py` задать `SCOPE_AS` и при необходимости `SCOPE_ENVS`.
+1. В `v2/config.py` задать `SCOPE_AS` и при необходимости `SCOPE_ENV`.
 2. Запустить `python v2/audit_scope.py`.
 3. Проверить `mapping_plan_v2_*.xlsx` и отметить нужные строки `selected=yes`.
 4. В `v2/config.py` указать:

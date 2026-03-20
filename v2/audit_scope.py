@@ -5,7 +5,7 @@ from datetime import datetime
 
 import config
 from api_clients import ZabbixAPI
-from common import build_artifact_path, normalize_values
+from common import build_artifact_path, normalize_scope_env, normalize_values
 from grafana_audit import collect_grafana_rows
 from mapping_plan import write_mapping_plan_xlsx
 from report_writer import save_inventory_json, write_workbook
@@ -20,14 +20,14 @@ def main() -> int:
     args = parser.parse_args()
 
     scope_as = normalize_values(config.SCOPE_AS)
-    scope_envs = normalize_values(config.SCOPE_ENVS)
+    scope_env = normalize_scope_env(config.SCOPE_ENV)
     if not scope_as:
         raise RuntimeError("v2 scope is empty. Set v2/config.py SCOPE_AS.")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_xlsx = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_envs, ".xlsx", timestamp=timestamp)
-    default_json = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_envs, ".json", timestamp=timestamp)
-    default_mapping = build_artifact_path(config.MAPPING_PLAN_PREFIX, scope_as, scope_envs, ".xlsx", timestamp=timestamp)
+    default_xlsx = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp)
+    default_json = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".json", timestamp=timestamp)
+    default_mapping = build_artifact_path(config.MAPPING_PLAN_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp)
     out_xlsx = args.out_xlsx or default_xlsx
     out_json = args.out_json or default_json
     out_mapping = args.out_mapping or default_mapping
@@ -37,7 +37,7 @@ def main() -> int:
     zabbix.login(connection.username, connection.password)
 
     print("Running Zabbix inventory (v2)...")
-    report = build_scope_report(zabbix, scope_as, scope_envs)
+    report = build_scope_report(zabbix, scope_as, scope_env)
 
     if config.ENABLE_GRAFANA:
         try:

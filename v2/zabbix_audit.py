@@ -16,7 +16,7 @@ from common import (
     is_old_group,
     join_sorted,
     normalize_lower_set,
-    normalize_scope_envs,
+    normalize_scope_env,
     normalize_values,
     resolve_tagfilter_tag,
     resolve_tagfilter_value,
@@ -315,12 +315,12 @@ def _group_bucket_rows(
 def build_scope_report(
     api: ZabbixAPI,
     scope_as: Sequence[str],
-    scope_envs: Sequence[str],
+    scope_env: str,
 ) -> Dict[str, Any]:
     scope_as_values = normalize_values(scope_as)
     scope_as_lower = normalize_lower_set(scope_as_values)
-    scope_env_values = normalize_scope_envs(scope_envs)
-    scope_env_lower = normalize_lower_set(scope_env_values)
+    scope_env_value = normalize_scope_env(scope_env)
+    scope_env_lower = {scope_env_value.lower()} if scope_env_value else set()
 
     if not scope_as_values:
         raise RuntimeError("v2 audit scope is empty. Set v2/config.py SCOPE_AS.")
@@ -602,7 +602,7 @@ def build_scope_report(
 
     summary = {
         "scope_as": scope_as_values,
-        "scope_envs": scope_env_values,
+        "scope_env": scope_env_value,
         "env_policy": f"{config.ENV_PROD_LABEL} => {config.ENV_PROD_LABEL}; everything else => {config.ENV_NONPROD_LABEL}",
         "hosts_in_scope": len(scope_hosts),
         "hosts_skipped_env": len(scope_hosts_skipped_env),
@@ -629,7 +629,7 @@ def build_scope_report(
         "grafana": [],
         "inventory": {
             "scope_as": scope_as_values,
-            "scope_envs": scope_env_values,
+            "scope_env": scope_env_value,
             "hostids": sorted(row["hostid"] for row in scope_hosts if row.get("hostid")),
             "hostgroups": sorted(inventory_hostgroups, key=lambda item: (item["kind"], item["name"].lower())),
             "actionids": sorted(row["actionid"] for row in action_rows if row.get("actionid")),
