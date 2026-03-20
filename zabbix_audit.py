@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from typing import Any, Dict, List, Sequence, Set
+from typing import Any, Callable, Dict, List, Sequence, Set
 
 import config
 from api_clients import ZabbixAPI
@@ -100,6 +100,11 @@ def _user_display(user: Dict[str, Any]) -> str:
 
 def _host_name(host: Dict[str, Any]) -> str:
     return str(host.get("name") or host.get("host") or host.get("hostid") or "")
+
+
+def _log(log: Callable[[str], None] | None, message: str) -> None:
+    if log is not None:
+        log(message)
 
 
 def _is_old_group_for_as(name: str, as_value: str) -> bool:
@@ -567,6 +572,7 @@ def build_scope_report(
     api: ZabbixAPI,
     scope_as: Sequence[str],
     scope_env: str,
+    log: Callable[[str], None] | None = None,
 ) -> Dict[str, Any]:
     scope_as_values = normalize_values(scope_as)
     scope_as_lower = normalize_lower_set(scope_as_values)
@@ -576,12 +582,26 @@ def build_scope_report(
     if not scope_as_values:
         raise RuntimeError("Audit scope is empty. Set SCOPE_AS in config.py.")
 
+    _log(log, f"zabbix: scope_as={scope_as_values} scope_env={scope_env_value or '(all)'}")
+    _log(log, "zabbix: fetching hostgroups")
+
     hostgroups = fetch_hostgroups(api)
+    _log(log, f"zabbix: fetched hostgroups={len(hostgroups)}")
+    _log(log, "zabbix: fetching hosts")
     hosts = fetch_hosts(api)
+    _log(log, f"zabbix: fetched hosts={len(hosts)} monitored_only={config.MONITORED_HOSTS_ONLY}")
+    _log(log, "zabbix: fetching actions")
     actions = fetch_actions(api)
+    _log(log, f"zabbix: fetched actions={len(actions)}")
+    _log(log, "zabbix: fetching usergroups")
     usergroups = fetch_usergroups(api)
+    _log(log, f"zabbix: fetched usergroups={len(usergroups)}")
+    _log(log, "zabbix: fetching users")
     users = fetch_users(api)
+    _log(log, f"zabbix: fetched users={len(users)}")
+    _log(log, "zabbix: fetching maintenances")
     maintenances = fetch_maintenances(api)
+    _log(log, f"zabbix: fetched maintenances={len(maintenances)}")
 
     groupid_to_name: Dict[str, str] = {}
     grafana_old_groups: List[Dict[str, str]] = []
@@ -596,6 +616,7 @@ def build_scope_report(
         matched_as = [as_value for as_value in scope_as_values if _is_old_group_for_as(group_name, as_value)]
         for as_value in matched_as:
             grafana_old_groups.append({"groupid": group_id, "name": group_name, "kind": "OLD", "AS": as_value})
+    _log(log, f"zabbix: grafana_old_groups_catalog={len(grafana_old_groups)}")
 
     users_by_id: Dict[str, Dict[str, Any]] = {}
     user_media_by_id: Dict[str, List[str]] = {}
@@ -792,11 +813,23 @@ def build_scope_report(
             is_disabled,
         )
 
+    _log(
+        log,
+        "zabbix: host scan completed "
+        f"scope_hosts={len(scope_hosts)} old_scope={len(scope_hosts_replace)} "
+        f"no_any_new={len(scope_hosts_no_any_new)} disabled={len(scope_hosts_disabled)} "
+        f"skipped_env={len(scope_hosts_skipped_env)} unknown={len(unknown_rows)}",
+    )
+
     mapping_plan_rows = _build_mapping_plan_rows(old_bucket, new_bucket)
     mapping_candidates = _mapping_candidates_by_oldid(mapping_plan_rows)
     old_scope_groupids = {str(data["groupid"]) for data in old_bucket.values() if str(data.get("groupid") or "").strip()}
     old_name_to_groupid = {str(name): str(data.get("groupid") or "") for name, data in old_bucket.items()}
     zabbix_mapping_preview: List[Dict[str, Any]] = []
+    _log(
+        log,
+        f"zabbix: group buckets old={len(old_bucket)} new={len(new_bucket)} mapping_plan_rows={len(mapping_plan_rows)}",
+    )
 
     action_rows: List[Dict[str, Any]] = []
     recipient_usergroup_ids: Set[str] = set()
@@ -883,6 +916,7 @@ def build_scope_report(
                 "recipients_media": join_sorted(recipients_media),
             }
         )
+    _log(log, f"zabbix: matched actions={len(action_rows)}")
 
     usergroup_rows: List[Dict[str, Any]] = []
     scoped_user_ids: Set[str] = set()
@@ -946,6 +980,7 @@ def build_scope_report(
                 "is_action_recipient": "yes" if usergroup_id in recipient_usergroup_ids else "",
             }
         )
+    _log(log, f"zabbix: matched usergroups={len(usergroup_rows)} scoped_users={len(scoped_user_ids.union(recipient_user_ids))}")
 
     scoped_user_ids.update(recipient_user_ids)
 
@@ -984,6 +1019,7 @@ def build_scope_report(
                 "active_till": str(maintenance.get("active_till") or ""),
             }
         )
+    _log(log, f"zabbix: matched maintenances={len(maintenance_rows)}")
 
     preview_seen: Set[tuple[str, ...]] = set()
     preview_rows_sorted: List[Dict[str, Any]] = []
@@ -1015,6 +1051,7 @@ def build_scope_report(
         preview_rows_sorted.append(row)
 
     host_enrichment_rows = _build_host_enrichment_rows(_sort_host_rows(scope_hosts), old_name_to_groupid, mapping_candidates)
+    _log(log, f"zabbix: host_enrichment_rows={len(host_enrichment_rows)} zbx_map_preview_rows(before_dedup)={len(zabbix_mapping_preview)}")
 
     grafana_old_groups_dedup: List[Dict[str, str]] = []
     grafana_old_seen: Set[tuple[str, str]] = set()
@@ -1024,6 +1061,7 @@ def build_scope_report(
             continue
         grafana_old_seen.add(signature)
         grafana_old_groups_dedup.append(row)
+    _log(log, f"zabbix: grafana_old_groups_dedup={len(grafana_old_groups_dedup)}")
 
     inventory_hostgroups = [
         {
@@ -1086,6 +1124,7 @@ def build_scope_report(
         "usergroups": len(usergroup_rows),
         "maintenances": len(maintenance_rows),
     }
+    _log(log, f"zabbix: summary={summary}")
 
     return {
         "summary": summary,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Sequence, Set, Tuple
 
 import config
 from api_clients import GrafanaAPI
@@ -13,6 +13,11 @@ OLD_RX = re.compile(r"\b(?:BNK|DOM)-[A-Za-z0-9_.:-]+(?:-[A-Za-z0-9_.:-]+)*\b")
 REGEX_META_RX = re.compile(r"[\\^$*+?()\[\]{}|]")
 QUERY_FIELD_MARKERS = (".query", ".definition", ".expr", ".expression", ".rawsql", ".sql", ".regex")
 PATTERN_FIELD_KINDS = {"query", "definition", "expression", "sql", "regex", "current", "options"}
+
+
+def _log(log: Callable[[str], None] | None, message: str) -> None:
+    if log is not None:
+        log(message)
 
 
 def _iter_strings(node: Any, path: str = "", exclude_keys: Set[str] | None = None) -> List[Tuple[str, str]]:
@@ -276,6 +281,7 @@ def collect_grafana_report(
     conn: config.GrafanaConnection,
     scope_pairs: Sequence[Tuple[str, int]],
     scope_old_groups: Sequence[Dict[str, str]],
+    log: Callable[[str], None] | None = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     exact_old: Dict[str, Set[str]] = defaultdict(set)
     for row in scope_old_groups:
@@ -284,27 +290,39 @@ def collect_grafana_report(
         if name and as_value:
             exact_old[name].add(as_value)
 
+    _log(log, f"grafana: scope_pairs={[(as_value, int(org_id)) for as_value, org_id in scope_pairs]}")
+    _log(log, f"grafana: scope_old_groups={len(scope_old_groups)} unique_old_names={len(exact_old)}")
+
     counts: Dict[Tuple[str, ...], int] = defaultdict(int)
     seen_dashboards: Set[Tuple[str, int, str]] = set()
 
     for as_value, org_id in scope_pairs:
+        org_id_int = int(org_id or 0)
+        exact_old_count = sum(1 for values in exact_old.values() if as_value in values)
+        old_group_sample = sorted(name for name, values in exact_old.items() if as_value in values)[:10]
+        _log(log, f"grafana: start as={as_value} org_id={org_id_int} old_groups={exact_old_count} sample={old_group_sample}")
         api = GrafanaAPI(
             conn.base_url,
             conn.username,
             conn.password,
-            org_id=int(org_id or 0),
+            org_id=org_id_int,
             timeout_sec=int(config.HTTP_TIMEOUT_SEC),
         )
         dashboards = api.list_dashboards()
         as_prefixes = _pattern_prefixes(as_value)
+        _log(log, f"grafana: as={as_value} org_id={org_id_int} dashboards={len(dashboards)} prefixes={as_prefixes}")
+        org_exact_hits = 0
+        org_pattern_hits = 0
 
-        for dashboard_row in dashboards:
+        for dashboard_index, dashboard_row in enumerate(dashboards, start=1):
             uid = str(dashboard_row.get("uid") or "").strip()
             if not uid:
                 continue
-            if (as_value, int(org_id or 0), uid) in seen_dashboards:
+            if (as_value, org_id_int, uid) in seen_dashboards:
                 continue
-            seen_dashboards.add((as_value, int(org_id or 0), uid))
+            seen_dashboards.add((as_value, org_id_int, uid))
+            if dashboard_index == 1 or dashboard_index % 50 == 0:
+                _log(log, f"grafana: progress as={as_value} org_id={org_id_int} dashboard={dashboard_index}/{len(dashboards)} uid={uid}")
 
             dashboard_payload = api.get_dashboard_by_uid(uid)
             dashboard = dashboard_payload.get("dashboard") or dashboard_payload
@@ -315,6 +333,8 @@ def collect_grafana_report(
             contexts.extend(_dashboard_contexts(dashboard))
             contexts.extend(_variable_contexts(dashboard))
             contexts.extend(_panel_contexts(dashboard, dashboard_url))
+            dashboard_exact_hits = 0
+            dashboard_pattern_hits = 0
 
             for context in contexts:
                 text = str(context.get("text") or "")
@@ -342,6 +362,8 @@ def collect_grafana_report(
                             **context,
                         },
                     )
+                    dashboard_exact_hits += 1
+                    org_exact_hits += 1
 
                 if not _is_pattern_candidate(text, str(context.get("location_kind") or ""), str(context.get("field_kind") or "")):
                     continue
@@ -366,6 +388,21 @@ def collect_grafana_report(
                         **context,
                     },
                 )
+                dashboard_pattern_hits += 1
+                org_pattern_hits += 1
+
+            if dashboard_exact_hits or dashboard_pattern_hits:
+                _log(
+                    log,
+                    "grafana: hit "
+                    f"as={as_value} org_id={org_id_int} uid={uid} title={dashboard_title!r} "
+                    f"exact_old={dashboard_exact_hits} pattern_old={dashboard_pattern_hits}",
+                )
+
+        _log(
+            log,
+            f"grafana: completed as={as_value} org_id={org_id_int} exact_old_hits={org_exact_hits} pattern_old_hits={org_pattern_hits}",
+        )
 
     detail_rows: List[Dict[str, Any]] = []
     for key, count in sorted(counts.items(), key=lambda item: item[0]):
@@ -394,7 +431,9 @@ def collect_grafana_report(
             }
         )
 
+    summary_rows = _build_summary_rows(detail_rows)
+    _log(log, f"grafana: summary dashboards={len(summary_rows)} detail_rows={len(detail_rows)}")
     return {
-        "summary_rows": _build_summary_rows(detail_rows),
+        "summary_rows": summary_rows,
         "detail_rows": detail_rows,
     }
