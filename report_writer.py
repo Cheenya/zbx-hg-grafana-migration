@@ -100,6 +100,99 @@ GRAFANA_DETAIL_HEADERS = [
     "count",
 ]
 
+GRAFANA_ORG_SUMMARY_HEADERS = [
+    "grafana_org_id",
+    "zabbix_datasources",
+    "zabbix_datasource_names",
+    "dashboards_total",
+    "dashboards_with_zabbix",
+    "variables_with_zabbix",
+    "panels_with_zabbix",
+    "detail_rows",
+]
+
+GRAFANA_ORG_DATASOURCE_HEADERS = [
+    "grafana_org_id",
+    "datasource_id",
+    "datasource_uid",
+    "datasource_name",
+    "datasource_type",
+    "access",
+    "url",
+    "is_default",
+    "read_only",
+]
+
+GRAFANA_ORG_DASHBOARD_HEADERS = [
+    "grafana_org_id",
+    "dashboard_uid",
+    "dashboard_title",
+    "folder_title",
+    "dashboard_url",
+    "dashboard_datasources",
+    "dashboard_datasource_paths",
+    "zabbix_variable_count",
+    "zabbix_panel_count",
+    "detail_rows",
+]
+
+GRAFANA_ORG_VARIABLE_HEADERS = [
+    "grafana_org_id",
+    "dashboard_uid",
+    "dashboard_title",
+    "folder_title",
+    "dashboard_url",
+    "variable_name",
+    "variable_type",
+    "datasource_names",
+    "datasource_paths",
+    "query",
+    "regex",
+    "definition",
+    "refresh",
+    "hide",
+    "detail_rows",
+]
+
+GRAFANA_ORG_PANEL_HEADERS = [
+    "grafana_org_id",
+    "dashboard_uid",
+    "dashboard_title",
+    "folder_title",
+    "dashboard_url",
+    "panel_url",
+    "panel_id",
+    "panel_title",
+    "panel_type",
+    "datasource_names",
+    "datasource_paths",
+    "targets_total",
+    "targets_zabbix",
+    "detail_rows",
+]
+
+GRAFANA_ORG_DETAIL_HEADERS = [
+    "grafana_org_id",
+    "dashboard_uid",
+    "dashboard_title",
+    "folder_title",
+    "dashboard_url",
+    "panel_url",
+    "panel_id",
+    "panel_title",
+    "panel_type",
+    "variable_name",
+    "variable_type",
+    "location_kind",
+    "field_kind",
+    "reference_kind",
+    "hint_kinds",
+    "datasource_names",
+    "datasource_paths",
+    "source_text",
+    "json_path",
+]
+
 
 def _append_rows(ws, rows: Sequence[Dict[str, Any]], headers: Sequence[str]) -> None:
     ws.append(list(headers))
@@ -386,6 +479,79 @@ def write_grafana_workbook(report: Dict[str, Any], out_path: str) -> None:
         details_ws,
         report["grafana"],
         GRAFANA_DETAIL_HEADERS,
+        {
+            "dashboard_url": "dashboard_url",
+            "panel_url": "panel_url",
+        },
+    )
+
+    wb.save(out_path)
+
+
+def save_grafana_org_json(report: Dict[str, Any], path: str) -> None:
+    payload = {
+        "meta": {
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "version": "2.0",
+        },
+        "summary": report["summary"],
+        "org_summary": report["org_summary"],
+        "datasources": report["datasources"],
+        "dashboards": report["dashboards"],
+        "variables": report["variables"],
+        "panels": report["panels"],
+        "details": report["details"],
+    }
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
+def write_grafana_org_workbook(report: Dict[str, Any], out_path: str) -> None:
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    summary_ws = wb.create_sheet("SUMMARY")
+    summary_ws.append(["key", "value"])
+    for key, value in report["summary"].items():
+        if isinstance(value, list):
+            rendered = ", ".join(str(item) for item in value)
+        else:
+            rendered = value
+        summary_ws.append([key, rendered])
+    autosize_columns(summary_ws)
+
+    org_ws = wb.create_sheet("ORGS")
+    _append_rows(org_ws, report["org_summary"], GRAFANA_ORG_SUMMARY_HEADERS)
+
+    datasources_ws = wb.create_sheet("DATASOURCES")
+    _append_rows(datasources_ws, report["datasources"], GRAFANA_ORG_DATASOURCE_HEADERS)
+
+    dashboards_ws = wb.create_sheet("DASHBOARDS")
+    _append_rows(dashboards_ws, report["dashboards"], GRAFANA_ORG_DASHBOARD_HEADERS)
+    _apply_hyperlinks(dashboards_ws, report["dashboards"], GRAFANA_ORG_DASHBOARD_HEADERS, {"dashboard_url": "dashboard_url"})
+
+    variables_ws = wb.create_sheet("VARIABLES")
+    _append_rows(variables_ws, report["variables"], GRAFANA_ORG_VARIABLE_HEADERS)
+    _apply_hyperlinks(variables_ws, report["variables"], GRAFANA_ORG_VARIABLE_HEADERS, {"dashboard_url": "dashboard_url"})
+
+    panels_ws = wb.create_sheet("PANELS")
+    _append_rows(panels_ws, report["panels"], GRAFANA_ORG_PANEL_HEADERS)
+    _apply_hyperlinks(
+        panels_ws,
+        report["panels"],
+        GRAFANA_ORG_PANEL_HEADERS,
+        {
+            "dashboard_url": "dashboard_url",
+            "panel_url": "panel_url",
+        },
+    )
+
+    details_ws = wb.create_sheet("DETAILS")
+    _append_rows(details_ws, report["details"], GRAFANA_ORG_DETAIL_HEADERS)
+    _apply_hyperlinks(
+        details_ws,
+        report["details"],
+        GRAFANA_ORG_DETAIL_HEADERS,
         {
             "dashboard_url": "dashboard_url",
             "panel_url": "panel_url",

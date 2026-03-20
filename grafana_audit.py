@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Sequence, Set, Tuple
@@ -10,6 +11,7 @@ from common import join_sorted, normalize_values
 
 
 OLD_RX = re.compile(r"\b(?:BNK|DOM)-[A-Za-z0-9_.:-]+(?:-[A-Za-z0-9_.:-]+)*\b")
+NEW_RX = re.compile(r"\b(?:BNK|DOM)/[A-Za-z0-9_.:/-]+\b")
 REGEX_META_RX = re.compile(r"[\\^$*+?()\[\]{}|]")
 QUERY_FIELD_MARKERS = (".query", ".definition", ".expr", ".expression", ".rawsql", ".sql", ".regex")
 PATTERN_FIELD_KINDS = {"query", "definition", "expression", "sql", "regex", "current", "options"}
@@ -494,4 +496,563 @@ def collect_grafana_report(
     return {
         "summary_rows": summary_rows,
         "detail_rows": detail_rows,
+    }
+
+
+def _is_zabbix_datasource_row(row: Dict[str, Any]) -> bool:
+    text = " ".join(
+        str(row.get(key) or "")
+        for key in ("name", "uid", "type", "typeName", "pluginId", "url")
+    ).lower()
+    return "zabbix" in text
+
+
+def _datasource_identity(row: Dict[str, Any]) -> Tuple[str, str, str]:
+    return (
+        str(row.get("uid") or "").strip(),
+        str(row.get("id") or "").strip(),
+        str(row.get("name") or "").strip(),
+    )
+
+
+def _datasource_label(row: Dict[str, Any]) -> str:
+    name = str(row.get("name") or "").strip()
+    uid = str(row.get("uid") or "").strip()
+    if name and uid:
+        return f"{name} [{uid}]"
+    return name or uid or str(row.get("id") or "").strip()
+
+
+def _build_zabbix_datasource_index(rows: Sequence[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+    zabbix_rows = [row for row in rows if _is_zabbix_datasource_row(row)]
+    token_index: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for row in zabbix_rows:
+        tokens = {
+            str(row.get("id") or "").strip(),
+            str(row.get("uid") or "").strip(),
+            str(row.get("name") or "").strip(),
+            str(row.get("type") or "").strip(),
+            str(row.get("typeName") or "").strip(),
+            str(row.get("pluginId") or "").strip(),
+        }
+        for token in tokens:
+            if not token:
+                continue
+            token_index[token.lower()].append(row)
+    return zabbix_rows, token_index
+
+
+def _extract_template_vars(text: str) -> List[str]:
+    return [match.group(1) for match in re.finditer(r"\$\{?([A-Za-z0-9_:-]+)\}?", str(text or ""))]
+
+
+def _unique_datasource_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen: Set[Tuple[str, str, str]] = set()
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        identity = _datasource_identity(row)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        out.append(row)
+    return out
+
+
+def _match_datasource_tokens(tokens: Sequence[str], token_index: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    matches: List[Dict[str, Any]] = []
+    for token in tokens:
+        item = str(token or "").strip()
+        if not item:
+            continue
+        matches.extend(token_index.get(item.lower(), []))
+    return _unique_datasource_rows(matches)
+
+
+def _build_datasource_variable_index(
+    dashboard: Dict[str, Any],
+    token_index: Dict[str, List[Dict[str, Any]]],
+    zabbix_rows: Sequence[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    templating = (dashboard.get("templating") or {}).get("list") or []
+    for variable in templating:
+        if str(variable.get("type") or "") != "datasource":
+            continue
+        name = str(variable.get("name") or "").strip()
+        if not name:
+            continue
+        query = str(variable.get("query") or "").strip()
+        regex = str(variable.get("regex") or "").strip()
+        current = variable.get("current") or {}
+        tokens = [
+            query,
+            regex,
+            str(current.get("text") or "").strip(),
+            str(current.get("value") or "").strip(),
+        ]
+        matched = _match_datasource_tokens(tokens, token_index)
+        text = " ".join(token.lower() for token in tokens if token)
+        if not matched and "zabbix" in text:
+            matched = list(zabbix_rows)
+        if matched:
+            out[name] = _unique_datasource_rows(matched)
+    return out
+
+
+def _resolve_datasource_value(
+    value: Any,
+    token_index: Dict[str, List[Dict[str, Any]]],
+    datasource_vars: Dict[str, List[Dict[str, Any]]],
+) -> Tuple[List[Dict[str, Any]], str, str]:
+    raw_tokens: List[str] = []
+    ref_kind = ""
+
+    if isinstance(value, str):
+        text = str(value).strip()
+        raw_tokens.append(text)
+        variable_matches: List[Dict[str, Any]] = []
+        for variable_name in _extract_template_vars(text):
+            variable_matches.extend(datasource_vars.get(variable_name, []))
+        if variable_matches:
+            return _unique_datasource_rows(variable_matches), text, "datasource_variable"
+        return _match_datasource_tokens(raw_tokens, token_index), text, "datasource"
+
+    if isinstance(value, dict):
+        ref_kind = "datasource"
+        for key in ("uid", "name", "type", "typeName", "pluginId"):
+            token = str(value.get(key) or "").strip()
+            if token:
+                raw_tokens.append(token)
+        variable_matches = []
+        for token in raw_tokens:
+            for variable_name in _extract_template_vars(token):
+                variable_matches.extend(datasource_vars.get(variable_name, []))
+        if variable_matches:
+            return _unique_datasource_rows(variable_matches), json.dumps(value, ensure_ascii=False), "datasource_variable"
+        return _match_datasource_tokens(raw_tokens, token_index), json.dumps(value, ensure_ascii=False), ref_kind
+
+    text = str(value or "").strip()
+    if not text:
+        return [], "", ""
+    return [], text, "datasource"
+
+
+def _collect_datasource_references(
+    node: Any,
+    token_index: Dict[str, List[Dict[str, Any]]],
+    datasource_vars: Dict[str, List[Dict[str, Any]]],
+    path: str = "",
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            key_lower = str(key).lower()
+            if key_lower == "datasource" or key_lower in {"datasourceuid", "datasource_uid"}:
+                matched_rows, raw_value, ref_kind = _resolve_datasource_value(value, token_index, datasource_vars)
+                if matched_rows:
+                    rows.append(
+                        {
+                            "json_path": child_path,
+                            "raw_value": raw_value,
+                            "reference_kind": ref_kind,
+                            "datasources": _unique_datasource_rows(matched_rows),
+                        }
+                    )
+            rows.extend(_collect_datasource_references(value, token_index, datasource_vars, child_path))
+        return rows
+    if isinstance(node, list):
+        for index, item in enumerate(node):
+            child_path = f"{path}[{index}]" if path else f"[{index}]"
+            rows.extend(_collect_datasource_references(item, token_index, datasource_vars, child_path))
+    return rows
+
+
+def _format_datasource_labels(rows: Sequence[Dict[str, Any]]) -> str:
+    return join_sorted(_datasource_label(row) for row in rows)
+
+
+def _truncate(text: str, limit: int = 400) -> str:
+    item = str(text or "")
+    if len(item) <= limit:
+        return item
+    return item[: limit - 3] + "..."
+
+
+def _is_relevant_org_text(text: str, json_path: str, field_kind: str) -> bool:
+    lower_text = str(text or "").lower()
+    lower_path = str(json_path or "").lower()
+    if not lower_text.strip():
+        return False
+    if OLD_RX.search(text) or NEW_RX.search(text):
+        return True
+    if "$" in lower_text:
+        return True
+    if REGEX_META_RX.search(text):
+        return True
+    if field_kind in PATTERN_FIELD_KINDS:
+        return True
+    markers = (
+        ".datasource",
+        ".group",
+        ".groups",
+        ".host",
+        ".hosts",
+        ".application",
+        ".item",
+        ".filter",
+        ".search",
+        ".query",
+        ".definition",
+        ".regex",
+    )
+    return any(marker in lower_path for marker in markers)
+
+
+def _classify_org_text(text: str, json_path: str, field_kind: str) -> str:
+    hints: List[str] = []
+    lower_path = str(json_path or "").lower()
+    if OLD_RX.search(text):
+        hints.append("legacy_group_name")
+    if NEW_RX.search(text):
+        hints.append("new_group_name")
+    if "$" in str(text or ""):
+        hints.append("template_variable")
+    if REGEX_META_RX.search(text):
+        hints.append("regex_or_pattern")
+    if field_kind in PATTERN_FIELD_KINDS:
+        hints.append(f"{field_kind}_field")
+    if ".datasource" in lower_path:
+        hints.append("datasource_ref")
+    if any(token in lower_path for token in (".group", ".groups")):
+        hints.append("group_selector_field")
+    if any(token in lower_path for token in (".host", ".hosts")):
+        hints.append("host_selector_field")
+    if any(token in lower_path for token in (".item", ".application", ".filter", ".search")):
+        hints.append("selector_field")
+    return join_sorted(hints)
+
+
+def _build_org_summary_rows(
+    org_id: int,
+    total_dashboards: int,
+    datasources: Sequence[Dict[str, Any]],
+    dashboard_rows: Sequence[Dict[str, Any]],
+    variable_rows: Sequence[Dict[str, Any]],
+    panel_rows: Sequence[Dict[str, Any]],
+    detail_rows: Sequence[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    return [
+        {
+            "grafana_org_id": str(org_id),
+            "zabbix_datasources": len(datasources),
+            "zabbix_datasource_names": _format_datasource_labels(datasources),
+            "dashboards_total": int(total_dashboards),
+            "dashboards_with_zabbix": len(dashboard_rows),
+            "variables_with_zabbix": len(variable_rows),
+            "panels_with_zabbix": len(panel_rows),
+            "detail_rows": len(detail_rows),
+        }
+    ]
+
+
+def collect_grafana_org_report(
+    conn: config.GrafanaConnection,
+    org_ids: Sequence[int],
+    log: Callable[[str], None] | None = None,
+) -> Dict[str, Any]:
+    org_summary_rows: List[Dict[str, Any]] = []
+    datasource_rows: List[Dict[str, Any]] = []
+    dashboard_rows: List[Dict[str, Any]] = []
+    variable_rows: List[Dict[str, Any]] = []
+    panel_rows: List[Dict[str, Any]] = []
+    detail_rows: List[Dict[str, Any]] = []
+
+    normalized_org_ids = [int(value) for value in org_ids]
+    _log(log, f"grafana-org: start org_ids={normalized_org_ids}")
+
+    for org_id in normalized_org_ids:
+        api = GrafanaAPI(
+            conn.base_url,
+            conn.username,
+            conn.password,
+            org_id=org_id,
+            timeout_sec=int(config.HTTP_TIMEOUT_SEC),
+        )
+        all_datasources = api.list_datasources()
+        zabbix_datasources, ds_index = _build_zabbix_datasource_index(all_datasources)
+        _log(
+            log,
+            f"grafana-org: org_id={org_id} datasources_total={len(all_datasources)} zabbix_datasources={len(zabbix_datasources)} sample={[_datasource_label(row) for row in zabbix_datasources[:10]]}",
+        )
+
+        for row in zabbix_datasources:
+            datasource_rows.append(
+                {
+                    "grafana_org_id": str(org_id),
+                    "datasource_id": str(row.get("id") or ""),
+                    "datasource_uid": str(row.get("uid") or ""),
+                    "datasource_name": str(row.get("name") or ""),
+                    "datasource_type": str(row.get("type") or ""),
+                    "access": str(row.get("access") or ""),
+                    "url": str(row.get("url") or ""),
+                    "is_default": str(row.get("isDefault") or ""),
+                    "read_only": str(row.get("readOnly") or ""),
+                }
+            )
+
+        dashboards = api.list_dashboards()
+        _log(log, f"grafana-org: org_id={org_id} dashboards_total={len(dashboards)}")
+
+        org_dashboard_rows: List[Dict[str, Any]] = []
+        org_variable_rows: List[Dict[str, Any]] = []
+        org_panel_rows: List[Dict[str, Any]] = []
+        org_detail_rows: List[Dict[str, Any]] = []
+
+        for dashboard_index, dashboard_row in enumerate(dashboards, start=1):
+            uid = str(dashboard_row.get("uid") or "").strip()
+            if not uid:
+                continue
+            if dashboard_index == 1 or dashboard_index % 50 == 0:
+                _log(log, f"grafana-org: org_id={org_id} dashboard={dashboard_index}/{len(dashboards)} uid={uid}")
+
+            dashboard_payload = api.get_dashboard_by_uid(uid)
+            dashboard = dashboard_payload.get("dashboard") or dashboard_payload
+            dashboard_title = str(dashboard.get("title") or dashboard_row.get("title") or "")
+            folder_title = str(dashboard_row.get("folderTitle") or "")
+            dashboard_url = _build_dashboard_url(conn.base_url, dashboard_row, dashboard_payload, uid)
+            datasource_vars = _build_datasource_variable_index(dashboard, ds_index, zabbix_datasources)
+
+            dashboard_root = {key: value for key, value in dashboard.items() if key not in {"panels", "templating"}}
+            dashboard_refs = _collect_datasource_references(dashboard_root, ds_index, datasource_vars, path="dashboard")
+            dashboard_context_rows: List[Dict[str, Any]] = []
+            if dashboard_refs:
+                context_datasources = _unique_datasource_rows(
+                    [row for ref in dashboard_refs for row in ref.get("datasources") or []]
+                )
+                for context in _dashboard_contexts(dashboard):
+                    text = str(context.get("text") or "")
+                    if not _is_relevant_org_text(text, str(context.get("json_path") or ""), str(context.get("field_kind") or "")):
+                        continue
+                    dashboard_context_rows.append(
+                        {
+                            "grafana_org_id": str(org_id),
+                            "dashboard_uid": uid,
+                            "dashboard_title": dashboard_title,
+                            "folder_title": folder_title,
+                            "dashboard_url": dashboard_url,
+                            "panel_url": "",
+                            "panel_id": "",
+                            "panel_title": "",
+                            "panel_type": "",
+                            "variable_name": "",
+                            "variable_type": "",
+                            "location_kind": "dashboard",
+                            "field_kind": str(context.get("field_kind") or ""),
+                            "reference_kind": "dashboard_scope",
+                            "hint_kinds": _classify_org_text(text, str(context.get("json_path") or ""), str(context.get("field_kind") or "")),
+                            "datasource_names": _format_datasource_labels(context_datasources),
+                            "datasource_paths": join_sorted(ref.get("json_path") or "" for ref in dashboard_refs),
+                            "source_text": _truncate(text),
+                            "json_path": str(context.get("json_path") or ""),
+                        }
+                    )
+
+            dashboard_variable_rows: List[Dict[str, Any]] = []
+            templating = (dashboard.get("templating") or {}).get("list") or []
+            for index, variable in enumerate(templating):
+                base_path = f"dashboard.templating.list[{index}]"
+                variable_name = str(variable.get("name") or "")
+                variable_type = str(variable.get("type") or "")
+                variable_refs = _collect_datasource_references(variable, ds_index, datasource_vars, path=base_path)
+                if variable_type == "datasource" and variable_name in datasource_vars and not variable_refs:
+                    variable_refs = [
+                        {
+                            "json_path": f"{base_path}.query",
+                            "raw_value": str(variable.get("query") or ""),
+                            "reference_kind": "datasource_variable",
+                            "datasources": datasource_vars[variable_name],
+                        }
+                    ]
+                if not variable_refs:
+                    continue
+                variable_datasources = _unique_datasource_rows([row for ref in variable_refs for row in ref.get("datasources") or []])
+                strings = _iter_strings(variable, path=base_path)
+                relevant_count = 0
+                for json_path, text in strings:
+                    field_kind = _field_kind(json_path)
+                    if not _is_relevant_org_text(text, json_path, field_kind):
+                        continue
+                    relevant_count += 1
+                    dashboard_variable_rows.append(
+                        {
+                            "grafana_org_id": str(org_id),
+                            "dashboard_uid": uid,
+                            "dashboard_title": dashboard_title,
+                            "folder_title": folder_title,
+                            "dashboard_url": dashboard_url,
+                            "panel_url": "",
+                            "panel_id": "",
+                            "panel_title": "",
+                            "panel_type": "",
+                            "variable_name": variable_name,
+                            "variable_type": variable_type,
+                            "location_kind": "variable",
+                            "field_kind": field_kind,
+                            "reference_kind": join_sorted(ref.get("reference_kind") or "" for ref in variable_refs),
+                            "hint_kinds": _classify_org_text(text, json_path, field_kind),
+                            "datasource_names": _format_datasource_labels(variable_datasources),
+                            "datasource_paths": join_sorted(ref.get("json_path") or "" for ref in variable_refs),
+                            "source_text": _truncate(text),
+                            "json_path": json_path,
+                        }
+                    )
+                org_variable_rows.append(
+                    {
+                        "grafana_org_id": str(org_id),
+                        "dashboard_uid": uid,
+                        "dashboard_title": dashboard_title,
+                        "folder_title": folder_title,
+                        "dashboard_url": dashboard_url,
+                        "variable_name": variable_name,
+                        "variable_type": variable_type,
+                        "datasource_names": _format_datasource_labels(variable_datasources),
+                        "datasource_paths": join_sorted(ref.get("json_path") or "" for ref in variable_refs),
+                        "query": _truncate(str(variable.get("query") or "")),
+                        "regex": _truncate(str(variable.get("regex") or "")),
+                        "definition": _truncate(str(variable.get("definition") or "")),
+                        "refresh": str(variable.get("refresh") or ""),
+                        "hide": str(variable.get("hide") or ""),
+                        "detail_rows": relevant_count,
+                    }
+                )
+
+            dashboard_panel_rows: List[Dict[str, Any]] = []
+            for panel, panel_path in _walk_panels(dashboard.get("panels") or []):
+                panel_id = str(panel.get("id") or "")
+                panel_title = str(panel.get("title") or "")
+                panel_type = str(panel.get("type") or "")
+                panel_url = _build_panel_url(dashboard_url, panel_id)
+                panel_refs = _collect_datasource_references(panel, ds_index, datasource_vars, path=panel_path)
+                if not panel_refs:
+                    continue
+                panel_datasources = _unique_datasource_rows([row for ref in panel_refs for row in ref.get("datasources") or []])
+                target_count = len(panel.get("targets") or [])
+                zabbix_target_count = 0
+                for target_index, target in enumerate(panel.get("targets") or []):
+                    target_refs = _collect_datasource_references(target, ds_index, datasource_vars, path=f"{panel_path}.targets[{target_index}]")
+                    if target_refs:
+                        zabbix_target_count += 1
+                relevant_count = 0
+                for json_path, text in _iter_strings(panel, path=panel_path, exclude_keys={"panels"}):
+                    field_kind = _field_kind(json_path)
+                    if not _is_relevant_org_text(text, json_path, field_kind):
+                        continue
+                    relevant_count += 1
+                    org_detail_rows.append(
+                        {
+                            "grafana_org_id": str(org_id),
+                            "dashboard_uid": uid,
+                            "dashboard_title": dashboard_title,
+                            "folder_title": folder_title,
+                            "dashboard_url": dashboard_url,
+                            "panel_url": panel_url,
+                            "panel_id": panel_id,
+                            "panel_title": panel_title,
+                            "panel_type": panel_type,
+                            "variable_name": "",
+                            "variable_type": "",
+                            "location_kind": "panel",
+                            "field_kind": field_kind,
+                            "reference_kind": join_sorted(ref.get("reference_kind") or "" for ref in panel_refs),
+                            "hint_kinds": _classify_org_text(text, json_path, field_kind),
+                            "datasource_names": _format_datasource_labels(panel_datasources),
+                            "datasource_paths": join_sorted(ref.get("json_path") or "" for ref in panel_refs),
+                            "source_text": _truncate(text),
+                            "json_path": json_path,
+                        }
+                    )
+                dashboard_panel_rows.append(
+                    {
+                        "grafana_org_id": str(org_id),
+                        "dashboard_uid": uid,
+                        "dashboard_title": dashboard_title,
+                        "folder_title": folder_title,
+                        "dashboard_url": dashboard_url,
+                        "panel_url": panel_url,
+                        "panel_id": panel_id,
+                        "panel_title": panel_title,
+                        "panel_type": panel_type,
+                        "datasource_names": _format_datasource_labels(panel_datasources),
+                        "datasource_paths": join_sorted(ref.get("json_path") or "" for ref in panel_refs),
+                        "targets_total": target_count,
+                        "targets_zabbix": zabbix_target_count,
+                        "detail_rows": relevant_count,
+                    }
+                )
+
+            org_detail_rows.extend(dashboard_context_rows)
+            org_detail_rows.extend(dashboard_variable_rows)
+            org_panel_rows.extend(dashboard_panel_rows)
+
+            if dashboard_refs or dashboard_variable_rows or dashboard_panel_rows:
+                org_dashboard_rows.append(
+                    {
+                        "grafana_org_id": str(org_id),
+                        "dashboard_uid": uid,
+                        "dashboard_title": dashboard_title,
+                        "folder_title": folder_title,
+                        "dashboard_url": dashboard_url,
+                        "dashboard_datasources": _format_datasource_labels(
+                            _unique_datasource_rows([row for ref in dashboard_refs for row in ref.get("datasources") or []])
+                        ),
+                        "dashboard_datasource_paths": join_sorted(ref.get("json_path") or "" for ref in dashboard_refs),
+                        "zabbix_variable_count": sum(1 for row in org_variable_rows if row["dashboard_uid"] == uid and row["grafana_org_id"] == str(org_id)),
+                        "zabbix_panel_count": len(dashboard_panel_rows),
+                        "detail_rows": sum(1 for row in org_detail_rows if row["dashboard_uid"] == uid and row["grafana_org_id"] == str(org_id)),
+                    }
+                )
+                _log(
+                    log,
+                    f"grafana-org: hit org_id={org_id} uid={uid} title={dashboard_title!r} variables={org_dashboard_rows[-1]['zabbix_variable_count']} panels={len(dashboard_panel_rows)} details={org_dashboard_rows[-1]['detail_rows']}",
+                )
+
+        org_summary_rows.extend(
+            _build_org_summary_rows(
+                org_id,
+                len(dashboards),
+                zabbix_datasources,
+                org_dashboard_rows,
+                org_variable_rows,
+                org_panel_rows,
+                org_detail_rows,
+            )
+        )
+        dashboard_rows.extend(org_dashboard_rows)
+        variable_rows.extend(org_variable_rows)
+        panel_rows.extend(org_panel_rows)
+        detail_rows.extend(org_detail_rows)
+        _log(
+            log,
+            f"grafana-org: completed org_id={org_id} dashboards_with_zabbix={len(org_dashboard_rows)} variables={len(org_variable_rows)} panels={len(org_panel_rows)} details={len(org_detail_rows)}",
+        )
+
+    summary = {
+        "grafana_org_ids": normalized_org_ids,
+        "org_count": len(normalized_org_ids),
+        "datasource_rows": len(datasource_rows),
+        "dashboard_rows": len(dashboard_rows),
+        "variable_rows": len(variable_rows),
+        "panel_rows": len(panel_rows),
+        "detail_rows": len(detail_rows),
+    }
+    _log(log, f"grafana-org: summary={summary}")
+    return {
+        "summary": summary,
+        "org_summary": org_summary_rows,
+        "datasources": datasource_rows,
+        "dashboards": dashboard_rows,
+        "variables": variable_rows,
+        "panels": panel_rows,
+        "details": detail_rows,
     }

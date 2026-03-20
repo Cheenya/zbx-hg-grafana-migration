@@ -130,6 +130,27 @@ def build_artifact_path(
     return os.path.join(config.OUTPUT_DIR, f"{prefix}_{scope_part}_{stamp}{ext}")
 
 
+def build_org_artifact_path(
+    prefix: str,
+    org_ids: Sequence[int],
+    extension: str,
+    timestamp: Optional[str] = None,
+) -> str:
+    os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+    stamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+    normalized = [str(int(item)) for item in org_ids]
+    if not normalized:
+        scope_part = "NOORG"
+    elif len(normalized) <= 3:
+        scope_part = "-".join(f"org{item}" for item in normalized)
+    else:
+        scope_part = f"ORG{len(normalized)}"
+    ext = str(extension or "").strip()
+    if ext and not ext.startswith("."):
+        ext = f".{ext}"
+    return os.path.join(config.OUTPUT_DIR, f"{prefix}_{scope_part}_{stamp}{ext}")
+
+
 def build_output_paths(scope_as: Sequence[str], scope_env: str) -> Tuple[str, str]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return (

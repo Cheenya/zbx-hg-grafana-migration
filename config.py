@@ -12,6 +12,7 @@ GRAFANA_URL = ""
 GRAFANA_USER = ""
 GRAFANA_PASSWORD = ""
 GRAFANA_ORGIDS: tuple[int, ...] = ()
+GRAFANA_AUDIT_ORGIDS: tuple[int, ...] = ()
 
 
 # Scope нового контура.
@@ -27,6 +28,8 @@ OUTPUT_DIR: str = "v2_output"
 OUTPUT_PREFIX: str = "scope_audit_v2"
 AUDIT_LOG_PREFIX: str = "audit_log_v2"
 GRAFANA_REPORT_PREFIX: str = "grafana_audit_v2"
+GRAFANA_ORG_AUDIT_PREFIX: str = "grafana_org_audit"
+GRAFANA_ORG_AUDIT_LOG_PREFIX: str = "grafana_org_audit_log"
 MAPPING_PLAN_PREFIX: str = "mapping_plan_v2"
 IMPACT_PLAN_PREFIX: str = "impact_plan_v2"
 BACKUP_PREFIX: str = "scope_backup_v2"

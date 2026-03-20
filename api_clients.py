@@ -110,6 +110,9 @@ class GrafanaAPI:
             page += 1
         return dashboards
 
+    def list_datasources(self) -> List[Dict[str, Any]]:
+        return self.get("/api/datasources")
+
     def get_dashboard_by_uid(self, uid: str) -> Dict[str, Any]:
         return self.get(f"/api/dashboards/uid/{uid}")
 

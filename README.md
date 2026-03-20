@@ -7,6 +7,7 @@
 
 Что уже есть:
 - `python audit_scope.py` — read-only аудит Zabbix/Grafana;
+- `python grafana_org_audit.py` — отдельный аудит Grafana по `orgId`, без привязки к AS;
 - `python build_impact_plan.py` — сбор change-scope по подтверждённому `mapping_plan.xlsx`;
 - `python make_backup.py` — backup строго по `impact_plan.json`;
 - `python verify_backup.py` — проверка backup против `impact_plan.json`;
@@ -26,6 +27,20 @@
   - `scope_audit_v2_*.json`
   - `mapping_plan_v2_*.xlsx`
   - `grafana_audit_v2_*.xlsx`
+
+Что делает `grafana_org_audit.py`:
+- берёт `GRAFANA_AUDIT_ORGIDS` из `config.py`;
+- в каждой org находит все Zabbix datasources;
+- обходит все dashboards в этой org;
+- показывает всё, что завязано на Zabbix datasource:
+  - dashboards
+  - variables
+  - panels
+  - детали по query/regex/template/group-like строкам;
+- сохраняет:
+  - `grafana_org_audit_*.xlsx`
+  - `grafana_org_audit_*.json`
+  - `grafana_org_audit_log_*.log`
 
 Что делает `build_impact_plan.py`:
 - читает `SOURCE_AUDIT_JSON`;
@@ -73,6 +88,7 @@
 - несколько AS: `SCOPE_AS = ("dom_itmon", "risk_calc")`
 - одна org на все AS: `GRAFANA_ORGIDS = (17,)`
 - org по позиции: `GRAFANA_ORGIDS = (17, 23)`
+- org-only audit: `GRAFANA_AUDIT_ORGIDS = (17,)`
 - все env: `SCOPE_ENV = ""`
 - только nonprod: `SCOPE_ENV = "NONPROD"`
 - только prod: `SCOPE_ENV = "PROD"`

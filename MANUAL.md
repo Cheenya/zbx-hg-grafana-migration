@@ -22,6 +22,7 @@
 
 ```bash
 python audit_scope.py
+python grafana_org_audit.py
 python build_impact_plan.py
 python make_backup.py
 python verify_backup.py
@@ -30,6 +31,7 @@ python restore_backup.py
 
 Назначение:
 - `audit_scope.py` — аудит и первичный `mapping_plan.xlsx`;
+- `grafana_org_audit.py` — отдельный аудит Grafana по `orgId`, без привязки к `AS`;
 - `build_impact_plan.py` — build change-scope по выбранным mappings;
 - `make_backup.py` — backup по `impact_plan.json`;
 - `verify_backup.py` — сверка backup против `impact_plan.json`;
@@ -43,6 +45,7 @@ python restore_backup.py
 - `common.py` — общие утилиты и генерация путей артефактов;
 - `zabbix_audit.py` — read-only аудит Zabbix;
 - `grafana_audit.py` — read-only аудит Grafana;
+- `grafana_org_audit.py` — org-level аудит Grafana/Zabbix datasource usage;
 - `report_writer.py` — запись audit workbook/json;
 - `mapping_plan.py` — запись/чтение `mapping_plan.xlsx`;
 - `impact_plan.py` — построение и запись `impact_plan`;
@@ -68,6 +71,7 @@ GRAFANA_URL = ""
 GRAFANA_USER = ""
 GRAFANA_PASSWORD = ""
 GRAFANA_ORGIDS = ()
+GRAFANA_AUDIT_ORGIDS = ()
 ```
 
 Grafana сейчас работает по логину/паролю.
@@ -75,6 +79,16 @@ Grafana сейчас работает по логину/паролю.
 - пусто — org header не передаётся;
 - одно значение — один `orgId` для всех `SCOPE_AS`;
 - несколько значений — должны идти в том же порядке, что и `SCOPE_AS`.
+
+`GRAFANA_AUDIT_ORGIDS`:
+- отдельный список org для `grafana_org_audit.py`;
+- используется только этим скриптом;
+- формат:
+
+```python
+GRAFANA_AUDIT_ORGIDS = (17,)
+GRAFANA_AUDIT_ORGIDS = (17, 23)
+```
 
 ### 4.3. Scope
 
@@ -282,6 +296,36 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - `DASHBOARDS`
 - `DETAILS`
 
+### 5.3. Что делает `grafana_org_audit.py`
+
+Это отдельный Grafana-only скрипт.
+
+Он:
+- не использует `SCOPE_AS`;
+- берёт `GRAFANA_AUDIT_ORGIDS` напрямую из `config.py`;
+- в каждой выбранной org находит все Zabbix datasources;
+- скачивает все dashboards этой org;
+- показывает всё, что завязано на Zabbix datasource:
+  - сами datasources;
+  - dashboards;
+  - variables;
+  - panels;
+  - детали по `query` / `regex` / template / group-like строкам.
+
+Артефакты:
+- `grafana_org_audit_<org-scope>_<timestamp>.xlsx`
+- `grafana_org_audit_<org-scope>_<timestamp>.json`
+- `grafana_org_audit_log_<org-scope>_<timestamp>.log`
+
+Листы workbook:
+- `SUMMARY`
+- `ORGS`
+- `DATASOURCES`
+- `DASHBOARDS`
+- `VARIABLES`
+- `PANELS`
+- `DETAILS`
+
 
 ## 6. Как читать `MAPPING_PLAN`
 
@@ -424,6 +468,16 @@ SCOPE_ENV = "NONPROD"
 
 ```bash
 python audit_scope.py
+```
+
+Если нужно отдельно разобрать только Grafana по org:
+
+```python
+GRAFANA_AUDIT_ORGIDS = (17,)
+```
+
+```bash
+python grafana_org_audit.py
 ```
 
 ### Шаг 2. Ручная проверка
