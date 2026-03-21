@@ -30,6 +30,9 @@ AUDIT_LOG_PREFIX: str = "audit_log_v2"
 GRAFANA_REPORT_PREFIX: str = "grafana_audit_v2"
 GRAFANA_ORG_AUDIT_PREFIX: str = "grafana_org_audit"
 GRAFANA_ORG_AUDIT_LOG_PREFIX: str = "grafana_org_audit_log"
+GRAFANA_PLAN_PREFIX: str = "grafana_plan"
+GRAFANA_APPLY_PREFIX: str = "grafana_apply"
+GRAFANA_APPLY_CHANGES: bool = False
 MAPPING_PLAN_PREFIX: str = "mapping_plan_v2"
 IMPACT_PLAN_PREFIX: str = "impact_plan_v2"
 BACKUP_PREFIX: str = "scope_backup_v2"
@@ -39,9 +42,11 @@ SAVE_JSON_INVENTORY: bool = True
 
 # Входные файлы для plan/backup/verify.
 SOURCE_AUDIT_JSON: str = ""
+SOURCE_GRAFANA_ORG_JSON: str = ""
 SOURCE_MAPPING_PLAN_XLSX: str = ""
 SOURCE_IMPACT_PLAN_JSON: str = ""
 SOURCE_BACKUP_FILE: str = ""
+SOURCE_GRAFANA_PLAN_XLSX: str = ""
 
 
 # Теги и исключения.

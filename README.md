@@ -8,6 +8,8 @@
 Что уже есть:
 - `python audit_scope.py` — read-only аудит Zabbix/Grafana;
 - `python grafana_org_audit.py` — отдельный аудит Grafana по `orgId`, без привязки к AS;
+- `python build_grafana_plan.py` — сбор плана замены old/new host-groups в Grafana variables;
+- `python apply_grafana_plan.py` — dry-run/apply этого плана в Grafana;
 - `python build_impact_plan.py` — сбор change-scope по подтверждённому `mapping_plan.xlsx`;
 - `python make_backup.py` — backup строго по `impact_plan.json`;
 - `python verify_backup.py` — проверка backup против `impact_plan.json`;
@@ -41,6 +43,29 @@
   - `grafana_org_audit_*.xlsx`
   - `grafana_org_audit_*.json`
   - `grafana_org_audit_log_*.log`
+
+Что делает `build_grafana_plan.py`:
+- читает `SOURCE_GRAFANA_ORG_JSON`;
+- читает `SOURCE_MAPPING_PLAN_XLSX`;
+- берёт только `selected=yes` из mapping plan;
+- находит в Grafana variables поля со старыми host-group именами:
+  - `query`
+  - `regex`
+  - `definition`
+  - `current.*`
+  - `options[*].*`
+- сохраняет:
+  - `grafana_plan_*.xlsx`
+  - `grafana_plan_*.json`
+
+Что делает `apply_grafana_plan.py`:
+- читает `SOURCE_GRAFANA_PLAN_XLSX`;
+- берёт только строки, где `apply=yes`;
+- по умолчанию работает как dry-run;
+- если `GRAFANA_APPLY_CHANGES = True`, реально обновляет dashboard variables через Grafana API;
+- сохраняет:
+  - `grafana_apply_*.xlsx`
+  - `grafana_apply_*.json`
 
 Что делает `build_impact_plan.py`:
 - читает `SOURCE_AUDIT_JSON`;
@@ -80,7 +105,8 @@
 
 Что важно:
 - Grafana сейчас работает по логину/паролю;
-- контур пока не применяет миграцию;
+- Zabbix-миграцию контур пока не применяет;
+- Grafana меняется только отдельным `apply_grafana_plan.py` и по умолчанию идёт в dry-run;
 - контур пока только готовит и проверяет change-scope.
 
 Формат scope:
@@ -89,6 +115,7 @@
 - одна org на все AS: `GRAFANA_ORGIDS = (17,)`
 - org по позиции: `GRAFANA_ORGIDS = (17, 23)`
 - org-only audit: `GRAFANA_AUDIT_ORGIDS = (17,)`
+- grafana apply mode: `GRAFANA_APPLY_CHANGES = False`
 - все env: `SCOPE_ENV = ""`
 - только nonprod: `SCOPE_ENV = "NONPROD"`
 - только prod: `SCOPE_ENV = "PROD"`
@@ -97,14 +124,22 @@
 1. В `config.py` задать `SCOPE_AS` и при необходимости `SCOPE_ENV`.
 2. Запустить `python audit_scope.py`.
 3. Проверить `mapping_plan_v2_*.xlsx` и отметить нужные строки `selected=yes`.
-4. В `config.py` указать:
+4. Если нужен отдельный разбор Grafana:
+   - задать `GRAFANA_AUDIT_ORGIDS`
+   - запустить `python grafana_org_audit.py`
+   - указать `SOURCE_GRAFANA_ORG_JSON`
+   - запустить `python build_grafana_plan.py`
+   - отметить `apply=yes` в `grafana_plan_*.xlsx`
+   - держать `GRAFANA_APPLY_CHANGES = False` для dry-run
+   - запустить `python apply_grafana_plan.py`
+5. В `config.py` указать:
    - `SOURCE_AUDIT_JSON`
    - `SOURCE_MAPPING_PLAN_XLSX`
-5. Запустить `python build_impact_plan.py`.
-6. В `config.py` указать:
+6. Запустить `python build_impact_plan.py`.
+7. В `config.py` указать:
    - `SOURCE_IMPACT_PLAN_JSON`
-7. Запустить `python make_backup.py`.
-8. В `config.py` указать:
+8. Запустить `python make_backup.py`.
+9. В `config.py` указать:
    - `SOURCE_BACKUP_FILE`
-9. Запустить `python verify_backup.py`.
-10. Только после этого идти к будущему `migrate`.
+10. Запустить `python verify_backup.py`.
+11. Только после этого идти к будущему `migrate`.

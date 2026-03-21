@@ -14,8 +14,9 @@
 
 На текущем этапе контур:
 - ничего не меняет в Zabbix;
-- ничего не меняет в Grafana;
-- не выполняет саму миграцию.
+- меняет Grafana только через отдельный `apply_grafana_plan.py`;
+- по умолчанию Grafana apply идёт как dry-run;
+- не выполняет саму Zabbix-миграцию.
 
 
 ## 2. Точки входа
@@ -23,6 +24,8 @@
 ```bash
 python audit_scope.py
 python grafana_org_audit.py
+python build_grafana_plan.py
+python apply_grafana_plan.py
 python build_impact_plan.py
 python make_backup.py
 python verify_backup.py
@@ -32,6 +35,8 @@ python restore_backup.py
 Назначение:
 - `audit_scope.py` — аудит и первичный `mapping_plan.xlsx`;
 - `grafana_org_audit.py` — отдельный аудит Grafana по `orgId`, без привязки к `AS`;
+- `build_grafana_plan.py` — build плана замены host-groups в Grafana variables;
+- `apply_grafana_plan.py` — dry-run/apply Grafana variable plan;
 - `build_impact_plan.py` — build change-scope по выбранным mappings;
 - `make_backup.py` — backup по `impact_plan.json`;
 - `verify_backup.py` — сверка backup против `impact_plan.json`;
@@ -46,6 +51,7 @@ python restore_backup.py
 - `zabbix_audit.py` — read-only аудит Zabbix;
 - `grafana_audit.py` — read-only аудит Grafana;
 - `grafana_org_audit.py` — org-level аудит Grafana/Zabbix datasource usage;
+- `grafana_plan.py` — build/apply плана изменений Grafana variables;
 - `report_writer.py` — запись audit workbook/json;
 - `mapping_plan.py` — запись/чтение `mapping_plan.xlsx`;
 - `impact_plan.py` — построение и запись `impact_plan`;
@@ -72,6 +78,7 @@ GRAFANA_USER = ""
 GRAFANA_PASSWORD = ""
 GRAFANA_ORGIDS = ()
 GRAFANA_AUDIT_ORGIDS = ()
+GRAFANA_APPLY_CHANGES = False
 ```
 
 Grafana сейчас работает по логину/паролю.
@@ -89,6 +96,10 @@ Grafana сейчас работает по логину/паролю.
 GRAFANA_AUDIT_ORGIDS = (17,)
 GRAFANA_AUDIT_ORGIDS = (17, 23)
 ```
+
+`GRAFANA_APPLY_CHANGES`:
+- `False` — `apply_grafana_plan.py` работает только как dry-run;
+- `True` — `apply_grafana_plan.py` реально вызывает `dashboard update`.
 
 ### 4.3. Scope
 
@@ -166,16 +177,20 @@ SAVE_JSON_INVENTORY = True
 
 ```python
 SOURCE_AUDIT_JSON = ""
+SOURCE_GRAFANA_ORG_JSON = ""
 SOURCE_MAPPING_PLAN_XLSX = ""
 SOURCE_IMPACT_PLAN_JSON = ""
 SOURCE_BACKUP_FILE = ""
+SOURCE_GRAFANA_PLAN_XLSX = ""
 ```
 
 Использование:
 - `SOURCE_AUDIT_JSON` — вход для `build_impact_plan.py`;
+- `SOURCE_GRAFANA_ORG_JSON` — вход для `build_grafana_plan.py`;
 - `SOURCE_MAPPING_PLAN_XLSX` — вход для `build_impact_plan.py`;
 - `SOURCE_IMPACT_PLAN_JSON` — вход для `make_backup.py` и `verify_backup.py`;
 - `SOURCE_BACKUP_FILE` — вход для `verify_backup.py` и `restore_backup.py`.
+- `SOURCE_GRAFANA_PLAN_XLSX` — вход для `apply_grafana_plan.py`.
 
 ### 4.6. Теги
 
@@ -325,6 +340,61 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - `VARIABLES`
 - `PANELS`
 - `DETAILS`
+
+### 5.4. Что делает `build_grafana_plan.py`
+
+Вход:
+- `SOURCE_GRAFANA_ORG_JSON`
+- `SOURCE_MAPPING_PLAN_XLSX`
+
+Шаги:
+1. Читает org-level Grafana audit json.
+2. Читает `mapping_plan.xlsx`.
+3. Берёт только строки с `selected=yes`.
+4. По live dashboard JSON находит в variables все строковые поля, где встречаются выбранные `old_group`.
+5. Строит план изменений для:
+   - `query`
+   - `regex`
+   - `definition`
+   - `current.text`
+   - `current.value`
+   - `options[*].text`
+   - `options[*].value`
+6. Пишет:
+   - `grafana_plan_*.xlsx`
+   - `grafana_plan_*.json`
+
+Главный лист:
+- `PLAN`
+
+Ключевые колонки:
+- `apply` — ставится руками в `yes`, если строку нужно реально применять;
+- `variable_name`
+- `field_path`
+- `old_group`
+- `new_group`
+- `source_value`
+- `planned_value`
+- `manual_required`
+
+### 5.5. Что делает `apply_grafana_plan.py`
+
+Вход:
+- `SOURCE_GRAFANA_PLAN_XLSX`
+
+Шаги:
+1. Читает `PLAN`.
+2. Берёт только строки с `apply=yes`.
+3. По умолчанию работает как dry-run.
+4. Если `GRAFANA_APPLY_CHANGES = True`, реально обновляет dashboards через Grafana API.
+5. Пишет:
+   - `grafana_apply_*.xlsx`
+   - `grafana_apply_*.json`
+
+Листы результата:
+- `SUMMARY`
+- `RESULTS`
+- `DASHBOARDS`
 
 
 ## 6. Как читать `MAPPING_PLAN`
@@ -516,6 +586,44 @@ SOURCE_MAPPING_PLAN_XLSX = r"v2_output\\mapping_plan_v2_....xlsx"
 python build_impact_plan.py
 ```
 
+### Шаг 4a. Build Grafana variable plan
+
+Если нужно подготовить замену old/new host-groups в Grafana variables:
+
+```python
+SOURCE_GRAFANA_ORG_JSON = r"v2_output\\grafana_org_audit_....json"
+SOURCE_MAPPING_PLAN_XLSX = r"v2_output\\mapping_plan_v2_....xlsx"
+```
+
+```bash
+python build_grafana_plan.py
+```
+
+Потом открыть `grafana_plan_*.xlsx` и руками отметить нужные строки:
+
+```text
+apply = yes
+```
+
+### Шаг 4b. Dry-run / apply Grafana variable plan
+
+В `config.py` указать:
+
+```python
+SOURCE_GRAFANA_PLAN_XLSX = r"v2_output\\grafana_plan_....xlsx"
+GRAFANA_APPLY_CHANGES = False
+```
+
+```bash
+python apply_grafana_plan.py
+```
+
+Если dry-run устраивает, только потом:
+
+```python
+GRAFANA_APPLY_CHANGES = True
+```
+
 ### Шаг 5. Build backup
 
 В `config.py` указать:
@@ -568,7 +676,8 @@ python restore_backup.py
 Контур пока не делает:
 - собственно миграцию;
 - postcheck после миграции;
-- автоматический rewrite Grafana dashboards;
+- rewrite panel/dashboard-level Grafana полей вне variables;
+- backup Grafana перед apply.
 - автоматическое принятие ambiguous mappings.
 
 Это сознательно.
