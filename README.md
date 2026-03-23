@@ -54,12 +54,16 @@
   - `definition`
   - `current.*`
   - `options[*].*`
+- делит строки на режимы:
+  - `exact` — жёстко производные от Zabbix mapping;
+  - `manual_regex` — ручные regex/query случаи;
 - сохраняет:
   - `grafana_plan_*.xlsx`
   - `grafana_plan_*.json`
 
 Что делает `apply_grafana_plan.py`:
 - читает `SOURCE_GRAFANA_PLAN_XLSX`;
+- валидирует строки против `SOURCE_MAPPING_PLAN_XLSX`;
 - берёт только строки, где `apply=yes`;
 - по умолчанию работает как dry-run;
 - если `GRAFANA_APPLY_CHANGES = True`, реально обновляет dashboard variables через Grafana API;

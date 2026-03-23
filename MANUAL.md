@@ -360,7 +360,10 @@ MAPPING_FORBID_ENV_MISMATCH = True
    - `current.value`
    - `options[*].text`
    - `options[*].value`
-6. Пишет:
+6. Делит изменения на режимы:
+   - `exact` — строка должна оставаться полностью производной от `mapping_plan.xlsx`;
+   - `manual_regex` — допускается ручной `planned_value`, но только для пары из `mapping_plan.xlsx`.
+7. Пишет:
    - `grafana_plan_*.xlsx`
    - `grafana_plan_*.json`
 
@@ -375,6 +378,7 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - `new_group`
 - `source_value`
 - `planned_value`
+- `change_mode`
 - `manual_required`
 
 ### 5.5. Что делает `apply_grafana_plan.py`
@@ -384,10 +388,13 @@ MAPPING_FORBID_ENV_MISMATCH = True
 
 Шаги:
 1. Читает `PLAN`.
-2. Берёт только строки с `apply=yes`.
-3. По умолчанию работает как dry-run.
-4. Если `GRAFANA_APPLY_CHANGES = True`, реально обновляет dashboards через Grafana API.
-5. Пишет:
+2. Валидирует каждую строку против `mapping_plan.xlsx`.
+3. Берёт только строки с `apply=yes`.
+4. По умолчанию работает как dry-run.
+5. Для `exact` требует, чтобы `planned_value` оставался строго производным от `source_value` и пары `OLD -> NEW`.
+6. Для `manual_regex` допускает ручной `planned_value`, но только если пара существует в `mapping_plan.xlsx`.
+7. Если `GRAFANA_APPLY_CHANGES = True`, реально обновляет dashboards через Grafana API.
+8. Пишет:
    - `grafana_apply_*.xlsx`
    - `grafana_apply_*.json`
 

@@ -7,6 +7,7 @@ from datetime import datetime
 import config
 from common import build_org_artifact_path, normalize_values
 from grafana_plan import apply_grafana_plan, get_selected_grafana_changes, load_grafana_plan_rows, write_grafana_apply_xlsx
+from mapping_plan import get_selected_mappings, load_mapping_plan_rows
 
 
 def main() -> int:
@@ -16,11 +17,15 @@ def main() -> int:
     args = parser.parse_args()
 
     plan_path = str(config.SOURCE_GRAFANA_PLAN_XLSX or "").strip()
+    mapping_plan_path = str(config.SOURCE_MAPPING_PLAN_XLSX or "").strip()
     if not plan_path:
         raise RuntimeError("Set SOURCE_GRAFANA_PLAN_XLSX in config.py before applying Grafana plan.")
+    if not mapping_plan_path:
+        raise RuntimeError("Set SOURCE_MAPPING_PLAN_XLSX in config.py before applying Grafana plan.")
 
     plan_rows = load_grafana_plan_rows(plan_path)
     selected_rows = get_selected_grafana_changes(plan_rows)
+    selected_mappings = get_selected_mappings(load_mapping_plan_rows(mapping_plan_path))
     org_ids = [int(value) for value in normalize_values(sorted({row["grafana_org_id"] for row in selected_rows}))]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_xlsx = args.out_xlsx or build_org_artifact_path(config.GRAFANA_APPLY_PREFIX, org_ids, ".xlsx", timestamp=timestamp)
@@ -29,8 +34,9 @@ def main() -> int:
     dry_run = not bool(config.GRAFANA_APPLY_CHANGES)
     connection = config.load_grafana_connection()
     print(f"Applying Grafana plan from: {plan_path}")
+    print(f"Validating against mapping plan: {mapping_plan_path}")
     print(f"Mode: {'DRY-RUN' if dry_run else 'APPLY'}")
-    data = apply_grafana_plan(connection, selected_rows, dry_run=dry_run, log=print)
+    data = apply_grafana_plan(connection, selected_rows, selected_mappings, dry_run=dry_run, log=print)
 
     print(f"Writing Grafana apply XLSX: {out_xlsx}")
     write_grafana_apply_xlsx(data, out_xlsx)
