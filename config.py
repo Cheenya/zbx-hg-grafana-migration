@@ -3,27 +3,39 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-# Подключения. Заполняются прямо здесь.
+# Zabbix. Заполняется руками.
 ZBX_URL = ""
 ZBX_USER = ""
 ZBX_PASSWORD = ""
 
+# Grafana. Заполняется руками.
 GRAFANA_URL = ""
 GRAFANA_USER = ""
 GRAFANA_PASSWORD = ""
-GRAFANA_ORGIDS: tuple[int, ...] = ()
-GRAFANA_AUDIT_ORGIDS: tuple[int, ...] = ()
 
 
-# Scope нового контура.
+# Scope для Zabbix / обычного audit.
 SCOPE_AS: tuple[str, ...] = ()
 SCOPE_ENV: str = ""
+
+# Привязка Grafana org к SCOPE_AS в audit_scope.py.
+GRAFANA_ORGIDS: tuple[int, ...] = ()
+
+# Отдельный Grafana-only audit по org.
+GRAFANA_AUDIT_ORGIDS: tuple[int, ...] = ()
 
 
 # Runtime.
 HTTP_TIMEOUT_SEC: int = 90
 MONITORED_HOSTS_ONLY: bool = False
 ENABLE_GRAFANA: bool = True
+GROUP_SAMPLE_HOSTS: int = 10
+SAVE_JSON_INVENTORY: bool = True
+
+# Grafana apply.
+GRAFANA_APPLY_CHANGES: bool = False
+
+# Каталог и имена артефактов.
 OUTPUT_DIR: str = "v2_output"
 OUTPUT_PREFIX: str = "scope_audit_v2"
 AUDIT_LOG_PREFIX: str = "audit_log_v2"
@@ -32,15 +44,11 @@ GRAFANA_ORG_AUDIT_PREFIX: str = "grafana_org_audit"
 GRAFANA_ORG_AUDIT_LOG_PREFIX: str = "grafana_org_audit_log"
 GRAFANA_PLAN_PREFIX: str = "grafana_plan"
 GRAFANA_APPLY_PREFIX: str = "grafana_apply"
-GRAFANA_APPLY_CHANGES: bool = False
 MAPPING_PLAN_PREFIX: str = "mapping_plan_v2"
 IMPACT_PLAN_PREFIX: str = "impact_plan_v2"
 BACKUP_PREFIX: str = "scope_backup_v2"
-GROUP_SAMPLE_HOSTS: int = 10
-SAVE_JSON_INVENTORY: bool = True
 
-
-# Входные файлы для plan/backup/verify.
+# Входные файлы. Если пусто, скрипты берут самый свежий файл из OUTPUT_DIR.
 SOURCE_AUDIT_JSON: str = ""
 SOURCE_GRAFANA_ORG_JSON: str = ""
 SOURCE_MAPPING_PLAN_XLSX: str = ""
@@ -49,26 +57,30 @@ SOURCE_BACKUP_FILE: str = ""
 SOURCE_GRAFANA_PLAN_XLSX: str = ""
 
 
-# Теги и исключения.
+# Теги.
 TAG_AS: str = "AS"
 TAG_ASN: str = "ASN"
 TAG_ENV: str = "ENV"
 TAG_GAS: str = "GAS"
 TAG_GUEST_NAME: str = "GUEST-NAME"
 
+# UNKNOWN.
 UNKNOWN_TAG_VALUE: str = "UNKNOWN"
 UNKNOWN_GROUP_NAME: str = "UNKNOWN"
 EXCLUDE_UNKNOWN_FROM_STATS: bool = True
 
+# ENV.
 ENV_PROD_LABEL: str = "PROD"
 ENV_NONPROD_LABEL: str = "NONPROD"
 PROD_ENV_VALUES: tuple[str, ...] = ("PROD",)
 
+# Пороги mapping.
 MAPPING_MIN_INTERSECTION: int = 2
 MAPPING_MIN_OLD_COVERAGE: float = 0.20
 MAPPING_MIN_NEW_COVERAGE: float = 0.20
 MAPPING_FORBID_ENV_MISMATCH: bool = True
 
+# Исключаемые группы.
 EXCLUDED_GROUP_PATTERNS: tuple[str, ...] = (
     r"^Maintenance-dc-enable$",
     r"^Maintenance-",
