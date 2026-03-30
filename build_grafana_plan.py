@@ -4,7 +4,7 @@ import argparse
 from datetime import datetime
 
 import config
-from common import build_org_artifact_path, normalize_values
+from common import build_org_artifact_path, normalize_values, resolve_input_artifact
 from grafana_plan import build_grafana_plan, load_grafana_org_report, save_grafana_plan_json, write_grafana_plan_xlsx
 from mapping_plan import get_selected_mappings, load_mapping_plan_rows
 
@@ -15,12 +15,21 @@ def main() -> int:
     parser.add_argument("--out-json", dest="out_json", help="Path to Grafana plan JSON")
     args = parser.parse_args()
 
-    org_audit_json_path = str(config.SOURCE_GRAFANA_ORG_JSON or "").strip()
-    mapping_plan_path = str(config.SOURCE_MAPPING_PLAN_XLSX or "").strip()
-    if not org_audit_json_path:
-        raise RuntimeError("Set SOURCE_GRAFANA_ORG_JSON in config.py before building Grafana plan.")
-    if not mapping_plan_path:
-        raise RuntimeError("Set SOURCE_MAPPING_PLAN_XLSX in config.py before building Grafana plan.")
+    org_audit_json_path = resolve_input_artifact(
+        config.SOURCE_GRAFANA_ORG_JSON,
+        config.GRAFANA_ORG_AUDIT_PREFIX,
+        ".json",
+        org_ids=config.GRAFANA_AUDIT_ORGIDS,
+        label="Grafana org audit JSON",
+    )
+    mapping_plan_path = resolve_input_artifact(
+        config.SOURCE_MAPPING_PLAN_XLSX,
+        config.MAPPING_PLAN_PREFIX,
+        ".xlsx",
+        scope_as=config.SCOPE_AS,
+        scope_env=config.SCOPE_ENV,
+        label="mapping plan XLSX",
+    )
 
     org_report = load_grafana_org_report(org_audit_json_path)
     mapping_rows = load_mapping_plan_rows(mapping_plan_path)
@@ -32,6 +41,10 @@ def main() -> int:
     out_json = args.out_json or build_org_artifact_path(config.GRAFANA_PLAN_PREFIX, org_ids, ".json", timestamp=timestamp)
 
     connection = config.load_grafana_connection()
+    if not str(config.SOURCE_GRAFANA_ORG_JSON or "").strip():
+        print(f"Using latest Grafana org audit JSON: {org_audit_json_path}")
+    if not str(config.SOURCE_MAPPING_PLAN_XLSX or "").strip():
+        print(f"Using latest mapping plan XLSX: {mapping_plan_path}")
     print(f"Building Grafana plan from: {org_audit_json_path}")
     print(f"Using selected mappings from: {mapping_plan_path}")
     data = build_grafana_plan(connection, org_report, selected_mappings, log=print)

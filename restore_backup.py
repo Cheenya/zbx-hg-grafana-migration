@@ -5,6 +5,7 @@ from typing import Any, Dict, Set
 import config
 from api_clients import ZabbixAPI
 from backup_io import load_backup
+from common import resolve_input_artifact
 
 
 def _filter_keys(data: Dict[str, Any], allowed: Set[str]) -> Dict[str, Any]:
@@ -104,14 +105,21 @@ def restore_backup(api: ZabbixAPI, backup_path: str) -> None:
 
 
 def main() -> int:
-    backup_path = str(config.SOURCE_BACKUP_FILE or "").strip()
-    if not backup_path:
-        raise RuntimeError("Set SOURCE_BACKUP_FILE in config.py before restore.")
+    backup_path = resolve_input_artifact(
+        config.SOURCE_BACKUP_FILE,
+        config.BACKUP_PREFIX,
+        ".json.gz",
+        scope_as=config.SCOPE_AS,
+        scope_env=config.SCOPE_ENV,
+        label="backup file",
+    )
 
     connection = config.load_zabbix_connection()
     api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
     api.login(connection.username, connection.password)
 
+    if not str(config.SOURCE_BACKUP_FILE or "").strip():
+        print(f"Using latest backup file: {backup_path}")
     print(f"Restoring backup: {backup_path}")
     restore_backup(api, backup_path)
     print("Restore completed.")

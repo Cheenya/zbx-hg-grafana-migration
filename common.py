@@ -130,6 +130,15 @@ def build_artifact_path(
     return os.path.join(config.OUTPUT_DIR, f"{prefix}_{scope_part}_{stamp}{ext}")
 
 
+def build_org_scope_part(org_ids: Sequence[int]) -> str:
+    normalized = [str(int(item)) for item in org_ids]
+    if not normalized:
+        return "NOORG"
+    if len(normalized) <= 3:
+        return "-".join(f"org{item}" for item in normalized)
+    return f"ORG{len(normalized)}"
+
+
 def build_org_artifact_path(
     prefix: str,
     org_ids: Sequence[int],
@@ -138,13 +147,7 @@ def build_org_artifact_path(
 ) -> str:
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     stamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
-    normalized = [str(int(item)) for item in org_ids]
-    if not normalized:
-        scope_part = "NOORG"
-    elif len(normalized) <= 3:
-        scope_part = "-".join(f"org{item}" for item in normalized)
-    else:
-        scope_part = f"ORG{len(normalized)}"
+    scope_part = build_org_scope_part(org_ids)
     ext = str(extension or "").strip()
     if ext and not ext.startswith("."):
         ext = f".{ext}"
@@ -157,6 +160,61 @@ def build_output_paths(scope_as: Sequence[str], scope_env: str) -> Tuple[str, st
         build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp),
         build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".json", timestamp=timestamp),
     )
+
+
+def resolve_input_artifact(
+    configured_path: str,
+    prefix: str,
+    extension: str,
+    *,
+    scope_as: Sequence[str] | None = None,
+    scope_env: str = "",
+    org_ids: Sequence[int] | None = None,
+    label: str = "artifact",
+) -> str:
+    explicit = str(configured_path or "").strip()
+    if explicit:
+        return explicit
+
+    ext = str(extension or "").strip()
+    if ext and not ext.startswith("."):
+        ext = f".{ext}"
+
+    if not os.path.isdir(config.OUTPUT_DIR):
+        raise RuntimeError(f"{label} not set and output directory does not exist: {config.OUTPUT_DIR}")
+
+    candidates: List[Tuple[float, str, str]] = []
+    for entry in os.scandir(config.OUTPUT_DIR):
+        if not entry.is_file():
+            continue
+        name = entry.name
+        if not name.startswith(f"{prefix}_"):
+            continue
+        if ext and not name.endswith(ext):
+            continue
+        candidates.append((entry.stat().st_mtime, entry.path, name))
+
+    if not candidates:
+        raise RuntimeError(f"{label} not set and no files found for prefix '{prefix}' in {config.OUTPUT_DIR}")
+
+    preferred_stem = ""
+    normalized_org_ids = [int(item) for item in (org_ids or [])]
+    normalized_scope_as = normalize_values(scope_as)
+    normalized_scope_env = str(scope_env or "").strip()
+
+    if normalized_org_ids:
+        preferred_stem = f"{prefix}_{build_org_scope_part(normalized_org_ids)}_"
+    elif normalized_scope_as or normalized_scope_env:
+        preferred_stem = f"{prefix}_{build_scope_part(normalized_scope_as, normalized_scope_env)}_"
+
+    selected_pool = candidates
+    if preferred_stem:
+        scoped_candidates = [item for item in candidates if item[2].startswith(preferred_stem)]
+        if scoped_candidates:
+            selected_pool = scoped_candidates
+
+    selected_pool.sort(key=lambda item: (item[0], item[2]), reverse=True)
+    return selected_pool[0][1]
 
 
 def resolve_scope_org_pairs(scope_as: Sequence[str], orgids: Sequence[int]) -> List[Tuple[str, int]]:

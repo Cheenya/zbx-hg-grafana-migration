@@ -192,6 +192,9 @@ SOURCE_GRAFANA_PLAN_XLSX = ""
 - `SOURCE_BACKUP_FILE` — вход для `verify_backup.py` и `restore_backup.py`.
 - `SOURCE_GRAFANA_PLAN_XLSX` — вход для `apply_grafana_plan.py`.
 
+Если любой `SOURCE_*` пустой, соответствующий скрипт по умолчанию берёт самый свежий файл из `OUTPUT_DIR`.
+Если `SCOPE_AS` / `SCOPE_ENV` или `GRAFANA_AUDIT_ORGIDS` заданы, сначала ищется самый свежий файл именно под этот scope.
+
 ### 4.6. Теги
 
 ```python

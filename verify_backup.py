@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 import config
 from backup_io import load_backup
+from common import resolve_input_artifact
 
 
 def load_impact_plan(path: str) -> Dict[str, Any]:
@@ -30,12 +31,27 @@ def _compare(label: str, expected: Sequence[str], actual: Sequence[str]) -> Tupl
 
 
 def main() -> int:
-    impact_plan_path = str(config.SOURCE_IMPACT_PLAN_JSON or "").strip()
-    backup_path = str(config.SOURCE_BACKUP_FILE or "").strip()
-    if not impact_plan_path:
-        raise RuntimeError("Set SOURCE_IMPACT_PLAN_JSON in config.py before verify.")
-    if not backup_path:
-        raise RuntimeError("Set SOURCE_BACKUP_FILE in config.py before verify.")
+    impact_plan_path = resolve_input_artifact(
+        config.SOURCE_IMPACT_PLAN_JSON,
+        config.IMPACT_PLAN_PREFIX,
+        ".json",
+        scope_as=config.SCOPE_AS,
+        scope_env=config.SCOPE_ENV,
+        label="impact plan JSON",
+    )
+    backup_path = resolve_input_artifact(
+        config.SOURCE_BACKUP_FILE,
+        config.BACKUP_PREFIX,
+        ".json.gz",
+        scope_as=config.SCOPE_AS,
+        scope_env=config.SCOPE_ENV,
+        label="backup file",
+    )
+
+    if not str(config.SOURCE_IMPACT_PLAN_JSON or "").strip():
+        print(f"Using latest impact plan JSON: {impact_plan_path}")
+    if not str(config.SOURCE_BACKUP_FILE or "").strip():
+        print(f"Using latest backup file: {backup_path}")
 
     raw_impact_plan = load_impact_plan(impact_plan_path)
     summary = raw_impact_plan.get("summary") or {}

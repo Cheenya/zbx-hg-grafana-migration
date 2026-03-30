@@ -18,7 +18,7 @@ from backup_model import (
     UserBackup,
     UserGroupBackup,
 )
-from common import build_scope_part, normalize_values
+from common import build_scope_part, normalize_values, resolve_input_artifact
 
 
 def load_impact_plan(path: str) -> Dict[str, Any]:
@@ -239,9 +239,14 @@ def create_backup(api: ZabbixAPI, impact_plan_path: str, backup_path: str) -> Ba
 
 
 def main() -> int:
-    impact_plan_path = str(config.SOURCE_IMPACT_PLAN_JSON or "").strip()
-    if not impact_plan_path:
-        raise RuntimeError("Set SOURCE_IMPACT_PLAN_JSON in config.py to the JSON file from build_impact_plan.py.")
+    impact_plan_path = resolve_input_artifact(
+        config.SOURCE_IMPACT_PLAN_JSON,
+        config.IMPACT_PLAN_PREFIX,
+        ".json",
+        scope_as=config.SCOPE_AS,
+        scope_env=config.SCOPE_ENV,
+        label="impact plan JSON",
+    )
 
     impact_plan = load_impact_plan(impact_plan_path)
     impact_summary = impact_plan.get("summary") or {}
@@ -259,6 +264,8 @@ def main() -> int:
     api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
     api.login(connection.username, connection.password)
 
+    if not str(config.SOURCE_IMPACT_PLAN_JSON or "").strip():
+        print(f"Using latest impact plan JSON: {impact_plan_path}")
     print(f"Building backup from impact plan: {impact_plan_path}")
     create_backup(api, impact_plan_path, backup_path)
     print(f"Backup saved: {backup_path}")
