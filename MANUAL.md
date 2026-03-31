@@ -237,9 +237,10 @@ MAPPING_FORBID_ENV_MISMATCH = True
 `audit_scope.py`:
 - читает хосты, actions, usergroups, users, maintenances;
 - выделяет `UNKNOWN_HOSTS`;
-- строит `HOSTS`, `GROUPS_OLD`, `GROUPS_NEW`;
+- строит `HOSTS`, `GROUPS_OLD`, `GROUPS_NEW`, `EXPECTED_GROUPS`;
 - строит `MAPPING_PLAN` с кандидатами `OLD -> NEW`;
 - строит `HOST_ENRICHMENT`;
+- для каждого хоста рассчитывает ожидаемые standard groups по тегам и проверяет их наличие в каталоге host-groups;
 - подтягивает Grafana matches только по `OLD`-группам;
 - пишет:
   - audit workbook;
@@ -265,17 +266,29 @@ MAPPING_FORBID_ENV_MISMATCH = True
 
 `HOSTS`
 - основные хосты scope;
-- показывает `AS`, `ASN`, `GAS`, `GUEST_NAME`, `ENV_RAW`, `ENV_SCOPE`.
+- показывает `ORG`, `AS`, `ASN`, `GAS`, `GUEST_NAME`, `OS_FAMILY`, `ENV_RAW`, `ENV_SCOPE`;
+- показывает фактически назначенные standard groups по категориям.
 
 `HOSTS_OLD_SCOPE`
 - хосты, где есть `OLD`-группы scoped AS.
 
 `HOSTS_NO_ANY_NEW`
-- хосты с `OLD`-группами, но без единой `NEW`-группы scoped AS.
+- хосты с `OLD`-группами, но вообще без назначенных standard groups.
 
 `HOST_ENRICHMENT`
 - хосты и предполагаемое насыщение;
-- показывает `TARGET_ENV_SCOPE`, `TARGET_GAS`, `suggested_pairs`, `suggested_new_groups`, `missing_new_groups`.
+- показывает ожидаемые `ENV/AS/GAS/OS` groups;
+- отдельно показывает:
+  - `catalog_existing_groups`
+  - `catalog_missing_groups`
+  - `host_present_expected_groups`
+  - `host_missing_expected_groups`
+  - `suggested_pairs`
+  - `suggested_new_groups`
+  - `unresolved_reasons`.
+
+`HOSTS_NEED_ENRICH`
+- подмножество `HOST_ENRICHMENT`, где есть что добавить на хост или где не хватает host-group в каталоге Zabbix.
 
 `HOSTS_DISABLED`
 - выключенные хосты в scope.
@@ -287,7 +300,14 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - legacy host-groups в scope.
 
 `GROUPS_NEW`
-- новые host-groups в scope.
+- фактически назначенные standard groups в scope (`ENV/AS/GAS/OS`).
+
+`EXPECTED_GROUPS`
+- уникальный список ожидаемых standard groups, которые рассчитаны по тегам хостов;
+- отдельно показывает, есть ли такая группа в каталоге Zabbix.
+
+`HOST_EXPECTED`
+- технический лист: одна строка = одна ожидаемая группа на одном хосте.
 
 `MAPPING_PLAN`
 - кандидаты `OLD -> NEW`.
@@ -415,14 +435,18 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - `selected` — выставляется руками в `yes`, если именно эту пару нужно использовать;
 - `old_group`, `old_groupid`;
 - `new_group`, `new_groupid`;
+- `target_kind`;
+- `target_exists`;
 - `candidate_rank`;
 - `candidate_count`;
 - `intersection`;
+- `target_scope_hosts`;
 - `old_coverage`;
 - `new_coverage`;
 - `jaccard`;
-- `old_envs`, `new_envs`;
-- `env_relation`;
+- `old_orgs`, `old_envs`, `old_env_scopes`;
+- `target_env_raw`;
+- `auto_reason`;
 - `manual_required`;
 - `status`;
 - `comment`.
@@ -433,8 +457,10 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - один `new_group` тоже не должен быть выбран для нескольких `old_group`.
 
 Текущая автологика:
-- если кандидат один, без ENV-конфликта и без конфликта по `new_group`, строка ставится `selected=yes` автоматически;
-- всё неоднозначное остаётся на ручную проверку.
+- если у `old_group` есть ровно один существующий target-кандидат, строка ставится `selected=yes` автоматически;
+- если target-группа не существует в каталоге Zabbix, строка получает `status=missing_target_group`;
+- если по хостам видны разные `ORG/AS`, строка получает `status=mixed_host_tags`;
+- всё, где кандидатов несколько, остаётся на ручную проверку.
 
 
 ## 7. Что делает `build_impact_plan.py`
@@ -448,6 +474,7 @@ MAPPING_FORBID_ENV_MISMATCH = True
 2. Читает `mapping_plan.xlsx`.
 3. Берёт только строки с `selected=yes`.
 4. Строит change points:
+   - `host.groups += expected_groupid` для отсутствующих, но существующих в каталоге standard groups;
    - `action.filter.conditions[*].value`
    - `action.operations/recovery/update ... groupid`
    - `usergroup.hostgroup_rights[*].groupid`

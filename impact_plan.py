@@ -198,6 +198,7 @@ def build_impact_plan(
     maintenances = fetch_maintenances(api, inventory.get("maintenanceids") or [])
 
     zabbix_changes: List[Dict[str, Any]] = []
+    impacted_host_ids: Set[str] = set()
     impacted_action_ids: Set[str] = set()
     impacted_usergroup_ids: Set[str] = set()
     impacted_maintenance_ids: Set[str] = set()
@@ -319,6 +320,33 @@ def build_impact_plan(
         if changed:
             impacted_maintenance_ids.add(maintenance_id)
 
+    for row in audit_report.get("host_expected_groups") or []:
+        hostid = str(row.get("hostid") or "").strip()
+        groupid = str(row.get("groupid") or "").strip()
+        group_name = str(row.get("group_name") or "").strip()
+        if not hostid or not groupid or not group_name:
+            continue
+        if str(row.get("exists_in_zabbix") or "") != "yes":
+            continue
+        if str(row.get("on_host") or "") == "yes":
+            continue
+        zabbix_changes.append(
+            {
+                "object_type": "host",
+                "object_id": hostid,
+                "object_name": str(row.get("name") or row.get("host") or ""),
+                "field_path": "groups",
+                "change_kind": "add_group",
+                "old_group": "",
+                "old_groupid": "",
+                "new_group": group_name,
+                "new_groupid": groupid,
+                "manual_required": "",
+                "details": f"expected {str(row.get('group_kind') or '').strip()}",
+            }
+        )
+        impacted_host_ids.add(hostid)
+
     backup_usergroup_ids: Set[str] = set(impacted_usergroup_ids)
     backup_usergroup_ids.update(recipient_usergroup_ids)
     backup_usergroups = fetch_usergroups(api, sorted(backup_usergroup_ids))
@@ -421,6 +449,18 @@ def build_impact_plan(
             seen_groupids.add(group_id)
             hostgroups_scope.append({"groupid": group_id, "name": group_name, "kind": kind})
 
+    for row in audit_report.get("host_expected_groups") or []:
+        group_id = str(row.get("groupid") or "").strip()
+        group_name = str(row.get("group_name") or "").strip()
+        if not group_id or not group_name:
+            continue
+        if str(row.get("exists_in_zabbix") or "") != "yes":
+            continue
+        if group_id in seen_groupids:
+            continue
+        seen_groupids.add(group_id)
+        hostgroups_scope.append({"groupid": group_id, "name": group_name, "kind": str(row.get("group_kind") or "STANDARD")})
+
     backup_scope = {
         "hostids": sorted({str(item).strip() for item in (inventory.get("hostids") or []) if str(item).strip()}),
         "hostgroups": sorted(hostgroups_scope, key=lambda item: (item["kind"], item["name"].lower())),
@@ -435,6 +475,7 @@ def build_impact_plan(
         "scope_env": scope_env,
         "selected_mappings": len(selected_mappings),
         "zabbix_changes": len(zabbix_changes),
+        "host_changes": len(impacted_host_ids),
         "grafana_changes": len(grafana_changes),
         "backup_hostids": len(backup_scope["hostids"]),
         "backup_hostgroups": len(backup_scope["hostgroups"]),

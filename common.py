@@ -12,6 +12,8 @@ import config
 
 
 EXCLUDED_GROUP_PATTERNS = [re.compile(pattern) for pattern in config.EXCLUDED_GROUP_PATTERNS]
+OLD_GROUP_RX = re.compile(r"^(BNK|DOM)-", re.IGNORECASE)
+STANDARD_GROUP_RX = re.compile(r"^(BNK|DOM)/(ENV|AS|GAS|OS)(?:/(.+))?$", re.IGNORECASE)
 
 
 def normalize_values(values: Optional[Iterable[str]]) -> List[str]:
@@ -41,6 +43,10 @@ def normalize_scope_env(value: Optional[str]) -> str:
     return canonical_env_value(value)
 
 
+def normalize_upper_tag_value(value: Optional[str]) -> str:
+    return str(value or "").strip().upper()
+
+
 def get_tag_value(tags: Sequence[Dict[str, Any]], tag_name: str) -> Optional[str]:
     for tag in tags or []:
         if str(tag.get("tag") or "") != tag_name:
@@ -61,20 +67,189 @@ def is_excluded_group(name: str) -> bool:
 
 def is_old_group(name: str) -> bool:
     text = str(name or "")
-    return "/" not in text and re.match(r"^(BNK|DOM)-", text) is not None
+    return "/" not in text and OLD_GROUP_RX.match(text) is not None
+
+
+def old_group_org(name: str) -> str:
+    match = OLD_GROUP_RX.match(str(name or "").strip())
+    return str(match.group(1) or "").upper() if match else ""
+
+
+def parse_standard_group(name: str) -> Optional[Dict[str, str]]:
+    match = STANDARD_GROUP_RX.match(str(name or "").strip())
+    if not match:
+        return None
+
+    org = str(match.group(1) or "").upper()
+    root_kind = str(match.group(2) or "").upper()
+    raw_tail = str(match.group(3) or "").strip()
+    parts = [part.strip() for part in raw_tail.split("/") if part.strip()]
+
+    out: Dict[str, str] = {
+        "org": org,
+        "root_kind": root_kind,
+        "group_kind": root_kind,
+        "name": str(name or "").strip(),
+        "as_value": "",
+        "env_raw": "",
+        "gas_value": "",
+        "os_family": "",
+    }
+
+    if root_kind == "ENV":
+        if parts:
+            out["env_raw"] = parts[0]
+        return out
+
+    if root_kind == "AS":
+        if parts:
+            out["as_value"] = parts[0]
+        if len(parts) >= 2:
+            out["env_raw"] = parts[1]
+            out["group_kind"] = "AS_ENV"
+        return out
+
+    if root_kind == "GAS":
+        if parts:
+            out["gas_value"] = parts[0]
+        if len(parts) >= 2:
+            out["env_raw"] = parts[1]
+            out["group_kind"] = "GAS_ENV"
+        if len(parts) >= 3:
+            out["as_value"] = parts[1]
+            out["env_raw"] = parts[2]
+            out["group_kind"] = "GAS_AS_ENV"
+        return out
+
+    if root_kind == "OS":
+        if parts:
+            out["os_family"] = parts[0]
+        if len(parts) >= 2:
+            out["env_raw"] = parts[1]
+            out["group_kind"] = "OS_ENV"
+        return out
+
+    return out
+
+
+def is_standard_group(name: str) -> bool:
+    return parse_standard_group(name) is not None
 
 
 def is_new_group_for_as(name: str, as_value: str) -> bool:
-    text = str(name or "")
-    parts = [part for part in text.split("/") if part]
-    if len(parts) < 3:
+    parsed = parse_standard_group(name)
+    if not parsed:
         return False
-    prefix, marker, group_as = parts[0], parts[1], parts[2]
-    if prefix not in ("BNK", "DOM"):
+    if parsed.get("root_kind") != "AS":
         return False
-    if marker != "AS":
-        return False
-    return group_as.strip().lower() == as_value.strip().lower()
+    return str(parsed.get("as_value") or "").strip().lower() == str(as_value or "").strip().lower()
+
+
+def standard_group_lookup_key(name: str) -> str:
+    return str(name or "").strip().lower()
+
+
+def standard_group_org(name: str) -> str:
+    parsed = parse_standard_group(name)
+    return str(parsed.get("org") or "") if parsed else ""
+
+
+def resolve_host_org(group_names: Sequence[str]) -> Tuple[str, List[str]]:
+    candidates: Set[str] = set()
+    for group_name in group_names:
+        name = str(group_name or "").strip()
+        if not name:
+            continue
+        if is_old_group(name):
+            org = old_group_org(name)
+            if org:
+                candidates.add(org)
+            continue
+        parsed = parse_standard_group(name)
+        if parsed and parsed.get("org"):
+            candidates.add(str(parsed["org"]))
+
+    if len(candidates) == 1:
+        return next(iter(candidates)), []
+    if not candidates:
+        return "", ["ORG unresolved: no BNK/DOM groups"]
+    return "", [f"ORG unresolved: multiple values ({join_sorted(candidates)})"]
+
+
+def resolve_os_family(guest_name: Optional[str]) -> str:
+    text = str(guest_name or "").strip().lower()
+    if not text:
+        return ""
+    if "windows" in text:
+        return "WINDOWS"
+    if "linux" in text:
+        return "LINUX"
+    return ""
+
+
+def build_expected_hostgroups(
+    org: str,
+    as_value: Optional[str],
+    env_raw: Optional[str],
+    env_scope: Optional[str],
+    gas_value: Optional[str],
+    guest_name: Optional[str],
+) -> List[Dict[str, str]]:
+    org_value = str(org or "").strip().upper()
+    as_upper = normalize_upper_tag_value(as_value)
+    env_upper = normalize_upper_tag_value(env_raw)
+    gas_upper = normalize_upper_tag_value(gas_value)
+    os_family = resolve_os_family(guest_name)
+    scope_value = str(env_scope or "").strip()
+
+    if not org_value:
+        return []
+
+    rows: List[Dict[str, str]] = []
+    seen: Set[str] = set()
+
+    def add_group(group_kind: str, group_name: str) -> None:
+        name = str(group_name or "").strip()
+        if not name:
+            return
+        key = standard_group_lookup_key(name)
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(
+            {
+                "group_name": name,
+                "group_kind": group_kind,
+                "org": org_value,
+                "as_value": as_upper,
+                "env_raw": env_upper,
+                "env_scope": scope_value,
+                "gas_value": gas_upper,
+                "os_family": os_family,
+            }
+        )
+
+    if env_upper:
+        add_group("ENV", f"{org_value}/ENV/{env_upper}")
+
+    if as_upper:
+        add_group("AS", f"{org_value}/AS/{as_upper}")
+        if env_upper:
+            add_group("AS_ENV", f"{org_value}/AS/{as_upper}/{env_upper}")
+
+    if gas_upper:
+        add_group("GAS", f"{org_value}/GAS/{gas_upper}")
+        if env_upper:
+            add_group("GAS_ENV", f"{org_value}/GAS/{gas_upper}/{env_upper}")
+        if as_upper and env_upper:
+            add_group("GAS_AS_ENV", f"{org_value}/GAS/{gas_upper}/{as_upper}/{env_upper}")
+
+    if os_family:
+        add_group("OS", f"{org_value}/OS/{os_family}")
+        if env_upper:
+            add_group("OS_ENV", f"{org_value}/OS/{os_family}/{env_upper}")
+
+    return rows
 
 
 def safe_sheet_title(raw: str, max_len: int = 31) -> str:

@@ -20,6 +20,16 @@
 - берёт scope по `SCOPE_AS` и опционально по каноническому `SCOPE_ENV`;
 - опционально маппит `SCOPE_AS` на `GRAFANA_ORGIDS`;
 - учитывает `AS`, `ASN`, `ENV`, `GAS`, `GUEST-NAME`;
+- формирует ожидаемые standard host-groups по правилам:
+  - `$ORG/ENV/#ENV`
+  - `$ORG/AS/#AS`
+  - `$ORG/AS/#AS/#ENV`
+  - `$ORG/GAS/#GAS`
+  - `$ORG/GAS/#GAS/#ENV`
+  - `$ORG/GAS/#GAS/#AS/#ENV`
+  - `$ORG/OS/(LINUX|WINDOWS)`
+  - `$ORG/OS/(LINUX|WINDOWS)/#ENV`
+- проверяет существование этих групп в `Data collection -> Host groups`;
 - отдельно показывает `UNKNOWN`-хосты;
 - строит `MAPPING_PLAN` c кандидатами `OLD -> NEW`;
 - строит `HOST_ENRICHMENT` по хостам;
@@ -110,6 +120,8 @@
 Что важно:
 - Grafana сейчас работает по логину/паролю;
 - Zabbix-миграцию контур пока не применяет;
+- старые host-groups на хостах аудит не удаляет и не планирует к удалению;
+- если нужного тега нет, соответствующая standard group для хоста не строится;
 - Grafana меняется только отдельным `apply_grafana_plan.py` и по умолчанию идёт в dry-run;
 - если `SOURCE_*` путь не задан, соответствующий скрипт берёт самый свежий файл из `OUTPUT_DIR`;
 - контур пока только готовит и проверяет change-scope.
