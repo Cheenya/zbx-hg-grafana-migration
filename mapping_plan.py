@@ -75,7 +75,6 @@ def is_selected(value: Any) -> bool:
 def get_selected_mappings(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, str]]:
     selected: List[Dict[str, str]] = []
     old_seen: Dict[str, str] = {}
-    new_seen: Dict[str, str] = {}
 
     for row in rows:
         if not is_selected(row.get("selected")):
@@ -92,11 +91,8 @@ def get_selected_mappings(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, str]
 
         if old_group in old_seen:
             raise RuntimeError(f"Duplicate selected old_group in mapping plan: {old_group}")
-        if new_group in new_seen:
-            raise RuntimeError(f"Duplicate selected new_group in mapping plan: {new_group}")
 
         old_seen[old_group] = new_group
-        new_seen[new_group] = old_group
         selected.append(
             {
                 "AS": as_value,
