@@ -280,8 +280,6 @@ def build_expected_hostgroups(
         add_group("GAS", f"{org_value}/GAS/{gas_upper}")
         if env_upper:
             add_group("GAS_ENV", f"{org_value}/GAS/{gas_upper}/{env_upper}")
-        if as_upper and env_upper:
-            add_group("GAS_AS_ENV", f"{org_value}/GAS/{gas_upper}/{as_upper}/{env_upper}")
 
     if os_family:
         add_group("OS", f"{org_value}/OS/{os_family}")

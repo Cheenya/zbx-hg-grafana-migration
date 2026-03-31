@@ -785,9 +785,7 @@ def _build_host_enrichment_rows(
                 "standard_groups": host_row.get("standard_groups", ""),
                 "expected_env_groups": join_sorted(expected_by_kind.get("ENV", set())),
                 "expected_as_groups": join_sorted(expected_by_kind.get("AS", set()).union(expected_by_kind.get("AS_ENV", set()))),
-                "expected_gas_groups": join_sorted(
-                    expected_by_kind.get("GAS", set()).union(expected_by_kind.get("GAS_ENV", set())).union(expected_by_kind.get("GAS_AS_ENV", set()))
-                ),
+                "expected_gas_groups": join_sorted(expected_by_kind.get("GAS", set()).union(expected_by_kind.get("GAS_ENV", set()))),
                 "expected_os_groups": join_sorted(expected_by_kind.get("OS", set()).union(expected_by_kind.get("OS_ENV", set()))),
                 "catalog_existing_groups": join_sorted(catalog_existing),
                 "catalog_missing_groups": join_sorted(catalog_missing),
