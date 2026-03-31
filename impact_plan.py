@@ -197,6 +197,7 @@ def build_impact_plan(
     inventory = audit_report.get("inventory") or {}
     scope_as = inventory.get("scope_as") or []
     scope_env = str(inventory.get("scope_env") or "").strip()
+    scope_gas = [str(item).strip() for item in (inventory.get("scope_gas") or []) if str(item).strip()]
     if not scope_env:
         legacy_scope_envs = inventory.get("scope_envs") or []
         if legacy_scope_envs:
@@ -485,6 +486,7 @@ def build_impact_plan(
     summary = {
         "scope_as": scope_as,
         "scope_env": scope_env,
+        "scope_gas": scope_gas,
         "selected_mappings": len(selected_mappings),
         "zabbix_changes": len(zabbix_changes),
         "host_changes": len(impacted_host_ids),

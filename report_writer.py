@@ -538,6 +538,7 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
             "ORG",
             "old_group",
             "old_groupid",
+            "old_group_kind",
             "legacy_env_token",
             "new_group",
             "new_groupid",
@@ -581,6 +582,8 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
             "target_kind",
             "target_exists",
             "mapping_status",
+            "object_has_candidate_new",
+            "include_reason",
             "manual_required",
             "host_action",
             "hosts_need_add_new",
@@ -599,6 +602,9 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
             "where_found",
             "matched_groupids",
             "matched_group_names",
+            "candidate_new_groupids_present",
+            "candidate_new_group_names_present",
+            "include_reason",
             "recipient_usergroups",
             "recipient_users",
             "recipients_media",
@@ -612,8 +618,11 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
         [
             "usrgrpid",
             "name",
-            "rights_on_scope_groups",
+            "rights_on_old_groups",
+            "rights_on_new_groups",
+            "candidate_new_groups_already_present",
             "matching_tag_filters",
+            "include_reason",
             "users",
             "users_media",
             "is_action_recipient",
@@ -624,7 +633,17 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
     _append_rows(
         maintenances_ws,
         report["maintenances"],
-        ["maintenanceid", "name", "matched_groupids", "matched_group_names", "active_since", "active_till"],
+        [
+            "maintenanceid",
+            "name",
+            "matched_groupids",
+            "matched_group_names",
+            "candidate_new_groupids_present",
+            "candidate_new_group_names_present",
+            "include_reason",
+            "active_since",
+            "active_till",
+        ],
     )
 
     grafana_summary_ws = wb.create_sheet("GRAFANA_SUMMARY")

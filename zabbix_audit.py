@@ -322,6 +322,7 @@ def _ensure_old_bucket_row() -> Dict[str, Any]:
         "groupid": "",
         "hostids": set(),
         "host_names": set(),
+        "hostids_by_env_raw": defaultdict(set),
         "org_values": set(),
         "as_values": set(),
         "env_raw_values": set(),
@@ -432,10 +433,18 @@ def _expected_bucket_rows(bucket: Dict[str, Dict[str, Any]], sample_limit: int) 
     return rows
 
 
+def _old_group_kind(old_group_name: str) -> str:
+    legacy_env_tokens = {normalize_upper_tag_value(item) for item in getattr(config, "LEGACY_ENV_TOKENS", ()) if normalize_upper_tag_value(item)}
+    parts = [normalize_upper_tag_value(part) for part in str(old_group_name or "").split("-")[1:] if normalize_upper_tag_value(part)]
+    if len(parts) == 1 and parts[0] in legacy_env_tokens:
+        return "ENV"
+    return "AS"
+
 
 def _build_mapping_plan_rows(
     old_bucket: Dict[str, Dict[str, Any]],
     standard_bucket: Dict[str, Dict[str, Any]],
+    expected_bucket: Dict[str, Dict[str, Any]],
     host_mapping_targets: Dict[str, List[Dict[str, Any]]],
 ) -> List[Dict[str, Any]]:
     per_old: Dict[str, List[Dict[str, Any]]] = {}
@@ -449,6 +458,7 @@ def _build_mapping_plan_rows(
         old_env_scopes = sorted(str(item).strip() for item in old_data["env_scope_values"] if str(item).strip())
         legacy_env_token = extract_legacy_env_token(old_name)
         legacy_env_scope = canonical_env_value(legacy_env_token) if legacy_env_token else ""
+        old_group_kind = _old_group_kind(old_name)
 
         candidate_state: Dict[str, Dict[str, Any]] = {}
         for hostid in old_hostids:
@@ -482,6 +492,7 @@ def _build_mapping_plan_rows(
                 "ORG": join_sorted(old_orgs),
                 "old_group": old_name,
                 "old_groupid": str(old_data.get("groupid") or ""),
+                "old_group_kind": old_group_kind,
                 "legacy_env_token": legacy_env_token,
                 "new_group": "",
                 "new_groupid": "",
@@ -505,7 +516,7 @@ def _build_mapping_plan_rows(
                 "comment": "",
             }
 
-        if not candidate_state:
+        if old_group_kind != "ENV" and not candidate_state:
             per_old[old_name] = [make_empty_row("no_candidate", "yes")]
             continue
 
@@ -520,6 +531,72 @@ def _build_mapping_plan_rows(
 
         target_org = old_orgs[0]
         target_as = old_as_values[0]
+        if old_group_kind == "ENV":
+            env_candidates = [value for value in old_env_raws if value and canonical_env_value(value) == legacy_env_scope]
+            if not env_candidates:
+                per_old[old_name] = [make_empty_row("no_candidate", "yes")]
+                continue
+
+            env_rows: List[Dict[str, Any]] = []
+            hostids_by_env_raw = old_data.get("hostids_by_env_raw") or {}
+            for env_raw in sorted(env_candidates, key=str.lower):
+                target_name = f"{target_org}/ENV/{env_raw}"
+                expected_state = expected_bucket.get(target_name) or {}
+                target_group_hostids = set((standard_bucket.get(target_name) or {}).get("hostids") or set())
+                target_scope_hostids = set(hostids_by_env_raw.get(env_raw) or set())
+                hosts_already_have_new = len(target_scope_hostids.intersection(target_group_hostids))
+                target_exists = bool(expected_state.get("exists_in_zabbix"))
+                env_rows.append(
+                    {
+                        "selected": "",
+                        "AS": join_sorted(old_as_values),
+                        "ORG": target_org,
+                        "old_group": old_name,
+                        "old_groupid": str(old_data.get("groupid") or ""),
+                        "old_group_kind": old_group_kind,
+                        "legacy_env_token": legacy_env_token,
+                        "new_group": target_name,
+                        "new_groupid": str(expected_state.get("groupid") or ""),
+                        "target_kind": "ENV",
+                        "target_exists": "yes" if target_exists else "",
+                        "candidate_rank": 0,
+                        "candidate_count": 0,
+                        "old_hosts_count": old_count,
+                        "target_scope_hosts": len(target_scope_hostids),
+                        "new_hosts_count": len(target_group_hostids),
+                        "host_action": "add_new_if_missing",
+                        "hosts_need_add_new": max(len(target_scope_hostids) - hosts_already_have_new, 0),
+                        "hosts_already_have_new": hosts_already_have_new,
+                        "old_orgs": join_sorted(old_orgs),
+                        "old_envs": join_sorted(old_env_raws),
+                        "old_env_scopes": join_sorted(old_env_scopes),
+                        "target_env_raw": env_raw,
+                        "auto_reason": "",
+                        "manual_required": "yes",
+                        "status": "candidate",
+                        "comment": "",
+                    }
+                )
+
+            existing_env_rows = [row for row in env_rows if str(row.get("target_exists") or "") == "yes"]
+            if len(existing_env_rows) == 1:
+                existing_env_rows[0]["selected"] = "yes"
+                existing_env_rows[0]["manual_required"] = ""
+                existing_env_rows[0]["status"] = "auto_selected"
+                existing_env_rows[0]["auto_reason"] = "legacy_env_to_env"
+            else:
+                for row in env_rows:
+                    if not str(row.get("target_exists") or ""):
+                        row["status"] = "missing_target_group"
+                    elif len(existing_env_rows) > 1:
+                        row["status"] = "env_split_candidate"
+
+            for index, row in enumerate(sorted(env_rows, key=lambda item: (str(item.get("target_env_raw") or "").lower(), str(item.get("new_group") or "").lower())), start=1):
+                row["candidate_rank"] = index
+                row["candidate_count"] = len(env_rows)
+            per_old[old_name] = env_rows
+            continue
+
         base_group_name = f"{target_org}/AS/{target_as}"
         exact_env_values = [value for value in old_env_raws if value]
         exact_env_value = exact_env_values[0] if len(exact_env_values) == 1 else ""
@@ -553,6 +630,7 @@ def _build_mapping_plan_rows(
                 "ORG": target_org,
                 "old_group": old_name,
                 "old_groupid": str(old_data.get("groupid") or ""),
+                "old_group_kind": old_group_kind,
                 "legacy_env_token": legacy_env_token,
                 "new_group": target_name,
                 "new_groupid": str(state.get("groupid") or ""),
@@ -735,6 +813,8 @@ def _preview_rows_for_object(
     old_groupid: str,
     mapping_candidates: Dict[str, List[Dict[str, Any]]],
     groupid_to_name: Dict[str, str],
+    object_groupids: Set[str],
+    include_reason: str,
 ) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     old_group = groupid_to_name.get(old_groupid, old_groupid)
@@ -756,6 +836,8 @@ def _preview_rows_for_object(
                 "target_kind": "",
                 "target_exists": "",
                 "mapping_status": "no_candidate",
+                "object_has_candidate_new": "",
+                "include_reason": include_reason,
                 "manual_required": "yes",
                 "host_action": "",
                 "hosts_need_add_new": "",
@@ -781,6 +863,8 @@ def _preview_rows_for_object(
                 "target_kind": str(candidate.get("target_kind") or ""),
                 "target_exists": str(candidate.get("target_exists") or ""),
                 "mapping_status": str(candidate.get("status") or ""),
+                "object_has_candidate_new": "yes" if str(candidate.get("new_groupid") or "") in object_groupids else "",
+                "include_reason": include_reason,
                 "manual_required": str(candidate.get("manual_required") or ""),
                 "host_action": str(candidate.get("host_action") or ""),
                 "hosts_need_add_new": candidate.get("hosts_need_add_new", ""),
@@ -1088,6 +1172,8 @@ def build_scope_report(
             bucket["groupid"] = group_id
             bucket["hostids"].add(str(host.get("hostid") or ""))
             bucket["host_names"].add(host_name)
+            if env_raw_upper:
+                bucket["hostids_by_env_raw"][env_raw_upper].add(str(host.get("hostid") or ""))
             legacy_env_token = extract_legacy_env_token(group_name)
             if legacy_env_token:
                 bucket["legacy_env_tokens"].add(legacy_env_token)
@@ -1256,7 +1342,7 @@ def build_scope_report(
         f"skipped_env={len(scope_hosts_skipped_env)} skipped_gas={len(scope_hosts_skipped_gas)} unknown={len(unknown_rows)}",
     )
 
-    mapping_plan_rows = _build_mapping_plan_rows(old_bucket, standard_bucket, host_mapping_targets)
+    mapping_plan_rows = _build_mapping_plan_rows(old_bucket, standard_bucket, expected_bucket, host_mapping_targets)
     mapping_candidates = _mapping_candidates_by_oldid(mapping_plan_rows)
     old_scope_groupids = {str(data["groupid"]) for data in old_bucket.values() if str(data.get("groupid") or "").strip()}
     old_name_to_groupid = {str(name): str(data.get("groupid") or "") for name, data in old_bucket.items()}
@@ -1272,11 +1358,13 @@ def build_scope_report(
 
     for action in actions:
         condition_ids, operation_ids = extract_action_groupids(action)
-        matched_condition_ids = condition_ids.intersection(scope_groupids)
-        matched_operation_ids = operation_ids.intersection(scope_groupids)
-        matched_ids = matched_condition_ids.union(matched_operation_ids)
-        if not matched_ids:
+        matched_condition_ids = condition_ids.intersection(old_scope_groupids)
+        matched_operation_ids = operation_ids.intersection(old_scope_groupids)
+        matched_old_ids = matched_condition_ids.union(matched_operation_ids)
+        if not matched_old_ids:
             continue
+
+        action_all_groupids = condition_ids.union(operation_ids)
 
         if matched_condition_ids and matched_operation_ids:
             where_found = "both"
@@ -1301,6 +1389,8 @@ def build_scope_report(
                     group_id,
                     mapping_candidates,
                     groupid_to_name,
+                    action_all_groupids,
+                    f"old condition group={groupid_to_name.get(group_id, group_id)}",
                 )
             )
 
@@ -1320,6 +1410,8 @@ def build_scope_report(
                     group_id,
                     mapping_candidates,
                     groupid_to_name,
+                    action_all_groupids,
+                    f"old operation group={groupid_to_name.get(group_id, group_id)}",
                 )
             )
 
@@ -1344,8 +1436,21 @@ def build_scope_report(
                 "name": str(action.get("name") or ""),
                 "status": str(action.get("status") or ""),
                 "where_found": where_found,
-                "matched_groupids": join_sorted(matched_ids),
-                "matched_group_names": join_sorted(groupid_to_name.get(group_id, group_id) for group_id in matched_ids),
+                "matched_groupids": join_sorted(matched_old_ids),
+                "matched_group_names": join_sorted(groupid_to_name.get(group_id, group_id) for group_id in matched_old_ids),
+                "candidate_new_groupids_present": join_sorted(
+                    candidate.get("new_groupid")
+                    for old_groupid in matched_old_ids
+                    for candidate in (mapping_candidates.get(old_groupid) or [])
+                    if str(candidate.get("new_groupid") or "") in action_all_groupids
+                ),
+                "candidate_new_group_names_present": join_sorted(
+                    candidate.get("new_group")
+                    for old_groupid in matched_old_ids
+                    for candidate in (mapping_candidates.get(old_groupid) or [])
+                    if str(candidate.get("new_groupid") or "") in action_all_groupids
+                ),
+                "include_reason": f"old_groups={join_sorted(groupid_to_name.get(group_id, group_id) for group_id in matched_old_ids)}",
                 "recipient_usergroups": join_sorted(action_usergroup_ids),
                 "recipient_users": join_sorted(_user_display(users_by_id[user_id]) for user_id in action_user_ids if user_id in users_by_id),
                 "recipients_media": join_sorted(recipients_media),
@@ -1357,13 +1462,17 @@ def build_scope_report(
     scoped_user_ids: Set[str] = set()
     for usergroup in usergroups:
         rights = usergroup.get("hostgroup_rights") or []
-        touched_rights: List[str] = []
+        all_right_groupids: Set[str] = {
+            str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")
+            for right in rights
+            if str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "").strip()
+        }
+        touched_old_rights: List[str] = []
+        touched_new_rights: List[str] = []
         for index, right in enumerate(rights):
             group_id = str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")
-            if group_id not in scope_groupids:
-                continue
-            touched_rights.append(f"{groupid_to_name.get(group_id, group_id)}:{right.get('permission')}")
             if group_id in old_scope_groupids:
+                touched_old_rights.append(f"{groupid_to_name.get(group_id, group_id)}:{right.get('permission')}")
                 zabbix_mapping_preview.extend(
                     _preview_rows_for_object(
                         "usergroup",
@@ -1374,8 +1483,13 @@ def build_scope_report(
                         group_id,
                         mapping_candidates,
                         groupid_to_name,
+                        all_right_groupids,
+                        f"old usergroup right={groupid_to_name.get(group_id, group_id)}",
                     )
                 )
+                continue
+            if group_id in scope_groupids:
+                touched_new_rights.append(f"{groupid_to_name.get(group_id, group_id)}:{right.get('permission')}")
 
         tag_filters = usergroup.get("tag_filters") or []
         matching_filters: List[str] = []
@@ -1392,7 +1506,15 @@ def build_scope_report(
                 matching_filters.append(f"{tag_name}={tag_value}")
 
         usergroup_id = str(usergroup.get("usrgrpid") or "")
-        if not touched_rights and not matching_filters and usergroup_id not in recipient_usergroup_ids:
+        include_reasons: List[str] = []
+        if touched_old_rights:
+            include_reasons.append("old_hostgroup_rights")
+        if matching_filters:
+            include_reasons.append("matching_tag_filters")
+        if usergroup_id in recipient_usergroup_ids:
+            include_reasons.append("action_recipient")
+
+        if not include_reasons:
             continue
 
         users_chunks: List[str] = []
@@ -1408,8 +1530,11 @@ def build_scope_report(
             {
                 "usrgrpid": usergroup_id,
                 "name": str(usergroup.get("name") or ""),
-                "rights_on_scope_groups": "; ".join(touched_rights),
+                "rights_on_old_groups": "; ".join(touched_old_rights),
+                "rights_on_new_groups": "; ".join(touched_new_rights),
+                "candidate_new_groups_already_present": "yes" if touched_new_rights else "",
                 "matching_tag_filters": "; ".join(sorted(set(matching_filters))),
+                "include_reason": ", ".join(include_reasons),
                 "users": ", ".join(users_chunks),
                 "users_media": join_sorted(users_media),
                 "is_action_recipient": "yes" if usergroup_id in recipient_usergroup_ids else "",
@@ -1421,11 +1546,12 @@ def build_scope_report(
 
     maintenance_rows: List[Dict[str, Any]] = []
     for maintenance in maintenances:
-        matched_ids = {
+        maintenance_groupids = {
             str(group.get("groupid") or "")
             for group in maintenance.get("groups") or []
-            if str(group.get("groupid") or "") in scope_groupids
+            if str(group.get("groupid") or "").strip()
         }
+        matched_ids = {group_id for group_id in maintenance_groupids if group_id in old_scope_groupids}
         if not matched_ids:
             continue
         for index, group in enumerate(maintenance.get("groups") or []):
@@ -1442,6 +1568,8 @@ def build_scope_report(
                     group_id,
                     mapping_candidates,
                     groupid_to_name,
+                    maintenance_groupids,
+                    f"old maintenance group={groupid_to_name.get(group_id, group_id)}",
                 )
             )
         maintenance_rows.append(
@@ -1450,6 +1578,19 @@ def build_scope_report(
                 "name": str(maintenance.get("name") or ""),
                 "matched_groupids": join_sorted(matched_ids),
                 "matched_group_names": join_sorted(groupid_to_name.get(group_id, group_id) for group_id in matched_ids),
+                "candidate_new_groupids_present": join_sorted(
+                    candidate.get("new_groupid")
+                    for old_groupid in matched_ids
+                    for candidate in (mapping_candidates.get(old_groupid) or [])
+                    if str(candidate.get("new_groupid") or "") in maintenance_groupids
+                ),
+                "candidate_new_group_names_present": join_sorted(
+                    candidate.get("new_group")
+                    for old_groupid in matched_ids
+                    for candidate in (mapping_candidates.get(old_groupid) or [])
+                    if str(candidate.get("new_groupid") or "") in maintenance_groupids
+                ),
+                "include_reason": f"old_groups={join_sorted(groupid_to_name.get(group_id, group_id) for group_id in matched_ids)}",
                 "active_since": str(maintenance.get("active_since") or ""),
                 "active_till": str(maintenance.get("active_till") or ""),
             }

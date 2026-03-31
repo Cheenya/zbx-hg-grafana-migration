@@ -13,6 +13,7 @@ MAPPING_PLAN_HEADERS: List[str] = [
     "ORG",
     "old_group",
     "old_groupid",
+    "old_group_kind",
     "legacy_env_token",
     "new_group",
     "new_groupid",
