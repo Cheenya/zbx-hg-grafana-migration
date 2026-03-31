@@ -1026,6 +1026,7 @@ def build_scope_report(
             "gas_groups": "",
             "os_groups": "",
             "other_groups": "",
+            "current_groups": join_sorted(group_names),
             "replace_candidate": "",
             "has_old_groups": "",
             "has_standard_groups": "",
