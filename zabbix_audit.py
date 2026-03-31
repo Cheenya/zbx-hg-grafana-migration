@@ -795,17 +795,20 @@ def build_scope_report(
     api: ZabbixAPI,
     scope_as: Sequence[str],
     scope_env: str,
+    scope_gas: Sequence[str],
     log: Callable[[str], None] | None = None,
 ) -> Dict[str, Any]:
     scope_as_values = normalize_values(scope_as)
     scope_as_lower = normalize_lower_set(scope_as_values)
     scope_env_value = normalize_scope_env(scope_env)
     scope_env_lower = {scope_env_value.lower()} if scope_env_value else set()
+    scope_gas_values = [normalize_upper_tag_value(item) for item in scope_gas if normalize_upper_tag_value(item)]
+    scope_gas_upper = set(scope_gas_values)
 
     if not scope_as_values:
         raise RuntimeError("Audit scope is empty. Set SCOPE_AS in config.py.")
 
-    _log(log, f"zabbix: scope_as={scope_as_values} scope_env={scope_env_value or '(all)'}")
+    _log(log, f"zabbix: scope_as={scope_as_values} scope_env={scope_env_value or '(all)'} scope_gas={scope_gas_values or ['(all)']}")
     _log(log, "zabbix: fetching hostgroups")
     hostgroups = fetch_hostgroups(api)
     _log(log, f"zabbix: fetched hostgroups={len(hostgroups)}")
@@ -851,6 +854,7 @@ def build_scope_report(
     scope_hosts_clean: List[Dict[str, Any]] = []
     scope_hosts_no_any_new: List[Dict[str, Any]] = []
     scope_hosts_skipped_env: List[Dict[str, Any]] = []
+    scope_hosts_skipped_gas: List[Dict[str, Any]] = []
     scope_groupids: Set[str] = set()
     unknown_rows: List[Dict[str, Any]] = []
     old_bucket: Dict[str, Dict[str, Any]] = defaultdict(_ensure_old_bucket_row)
@@ -892,6 +896,8 @@ def build_scope_report(
 
         if unknown_reasons:
             include_unknown = _unknown_in_scope(host, scope_as_values, scope_as_lower)
+            if scope_gas_upper and gas_upper not in scope_gas_upper:
+                include_unknown = False
             if include_unknown:
                 unknown_rows.append(
                     {
@@ -948,6 +954,10 @@ def build_scope_report(
         if scope_env_lower and (not env_value or env_value.strip().lower() not in scope_env_lower):
             host_row["skip_reason"] = "ENV mismatch"
             scope_hosts_skipped_env.append(host_row)
+            continue
+        if scope_gas_upper and gas_upper not in scope_gas_upper:
+            host_row["skip_reason"] = "GAS mismatch"
+            scope_hosts_skipped_gas.append(host_row)
             continue
 
         org_value, org_reasons = resolve_host_org([str(host.get("host") or ""), str(host.get("name") or "")], group_names)
@@ -1243,7 +1253,7 @@ def build_scope_report(
         "zabbix: host scan completed "
         f"scope_hosts={len(scope_hosts)} old_scope={len(scope_hosts_replace)} "
         f"no_any_new={len(scope_hosts_no_any_new)} "
-        f"skipped_env={len(scope_hosts_skipped_env)} unknown={len(unknown_rows)}",
+        f"skipped_env={len(scope_hosts_skipped_env)} skipped_gas={len(scope_hosts_skipped_gas)} unknown={len(unknown_rows)}",
     )
 
     mapping_plan_rows = _build_mapping_plan_rows(old_bucket, standard_bucket, host_mapping_targets)
@@ -1377,6 +1387,8 @@ def build_scope_report(
             if tag_name == config.TAG_AS and tag_value.strip().lower() in scope_as_lower:
                 matching_filters.append(f"{tag_name}={tag_value}")
             elif scope_env_lower and tag_name == config.TAG_ENV and canonical_env_value(tag_value).strip().lower() in scope_env_lower:
+                matching_filters.append(f"{tag_name}={tag_value}")
+            elif scope_gas_upper and tag_name == config.TAG_GAS and normalize_upper_tag_value(tag_value) in scope_gas_upper:
                 matching_filters.append(f"{tag_name}={tag_value}")
 
         usergroup_id = str(usergroup.get("usrgrpid") or "")
@@ -1513,6 +1525,7 @@ def build_scope_report(
     summary = {
         "scope_as": scope_as_values,
         "scope_env": scope_env_value,
+        "scope_gas": scope_gas_values,
         "env_policy": f"{config.ENV_PROD_LABEL} => {config.ENV_PROD_LABEL}; everything else => {config.ENV_NONPROD_LABEL}",
         "hosts_in_scope": len(scope_hosts),
         "hosts_excluded_manual": len(
@@ -1531,6 +1544,7 @@ def build_scope_report(
         "hosts_enrichment": len(host_enrichment_rows),
         "hosts_clean": len(scope_hosts_clean),
         "hosts_skipped_env": len(scope_hosts_skipped_env),
+        "hosts_skipped_gas": len(scope_hosts_skipped_gas),
         "unknown_hosts": len(unknown_rows),
         "env_values": len(env_summary_rows),
         "gas_values": len(gas_summary_rows),
@@ -1557,6 +1571,7 @@ def build_scope_report(
         "hosts_need_enrichment": _sort_host_rows(hosts_needing_enrichment),
         "hosts_clean": _sort_host_rows(scope_hosts_clean),
         "hosts_skipped_env": _sort_host_rows(scope_hosts_skipped_env),
+        "hosts_skipped_gas": _sort_host_rows(scope_hosts_skipped_gas),
         "mismatch_host_oldorg": _sort_host_rows(mismatch_host_oldorg_rows),
         "mismatch_host_proxyorg": _sort_host_rows(mismatch_host_proxyorg_rows),
         "mismatch_legacy_env": _sort_host_rows(mismatch_legacy_env_rows),
@@ -1584,6 +1599,7 @@ def build_scope_report(
         "inventory": {
             "scope_as": scope_as_values,
             "scope_env": scope_env_value,
+            "scope_gas": scope_gas_values,
             "hostids": sorted(row["hostid"] for row in scope_hosts if row.get("hostid")),
             "excluded_hostids_manual": sorted(
                 {

@@ -285,6 +285,7 @@ def save_inventory_json(report: Dict[str, Any], path: str) -> None:
         "hosts_need_enrichment": report["hosts_need_enrichment"],
         "hosts_clean": report["hosts_clean"],
         "hosts_skipped_env": report["hosts_skipped_env"],
+        "hosts_skipped_gas": report["hosts_skipped_gas"],
         "mismatch_host_oldorg": report["mismatch_host_oldorg"],
         "mismatch_host_proxyorg": report["mismatch_host_proxyorg"],
         "mismatch_legacy_env": report["mismatch_legacy_env"],
@@ -429,6 +430,9 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
 
     skipped_ws = wb.create_sheet("HOSTS_SKIPPED_ENV")
     _append_rows(skipped_ws, report["hosts_skipped_env"], SKIPPED_HOST_HEADERS)
+
+    skipped_gas_ws = wb.create_sheet("HOSTS_SKIPPED_GAS")
+    _append_rows(skipped_gas_ws, report["hosts_skipped_gas"], SKIPPED_HOST_HEADERS)
 
     mismatch_ws = wb.create_sheet("MISMATCHES")
     _append_titled_table(

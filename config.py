@@ -17,6 +17,7 @@ GRAFANA_PASSWORD = ""
 # Scope для Zabbix / обычного audit.
 SCOPE_AS: tuple[str, ...] = ()
 SCOPE_ENV: str = ""
+SCOPE_GAS: tuple[str, ...] = ()
 
 # ORG по доменам/именам хоста. Если совпадений нет, идёт fallback на группы хоста.
 ORG_DOMAIN_SUFFIXES: dict[str, tuple[str, ...]] = {

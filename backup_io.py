@@ -41,6 +41,8 @@ def load_backup(path: str) -> BackupData:
             meta_raw["scope_env"] = str(scope_envs[0] or "")
         else:
             meta_raw["scope_env"] = ""
+    if "scope_gas" not in meta_raw:
+        meta_raw["scope_gas"] = []
 
     return BackupData(
         meta=BackupMeta(**meta_raw),

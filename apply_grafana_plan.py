@@ -29,6 +29,7 @@ def main() -> int:
         ".xlsx",
         scope_as=config.SCOPE_AS,
         scope_env=config.SCOPE_ENV,
+        scope_gas=config.SCOPE_GAS,
         label="mapping plan XLSX",
     )
 

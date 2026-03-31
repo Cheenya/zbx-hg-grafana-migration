@@ -26,10 +26,10 @@ def load_impact_plan(path: str) -> Dict[str, Any]:
         return json.load(handle)
 
 
-def build_backup_path(scope_as: Sequence[str], scope_env: str) -> str:
+def build_backup_path(scope_as: Sequence[str], scope_env: str, scope_gas: Sequence[str]) -> str:
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    scope_part = build_scope_part(scope_as, scope_env)
+    scope_part = build_scope_part(scope_as, scope_env, scope_gas)
     return os.path.join(config.OUTPUT_DIR, f"{config.BACKUP_PREFIX}_{scope_part}_{timestamp}.json.gz")
 
 
@@ -133,6 +133,7 @@ def create_backup(api: ZabbixAPI, impact_plan_path: str, backup_path: str) -> Ba
     backup_scope = raw_impact_plan.get("backup_scope") or {}
     scope_as = normalize_values(summary.get("scope_as") or [])
     scope_env = str(summary.get("scope_env") or "").strip()
+    scope_gas = normalize_values(summary.get("scope_gas") or [])
     if not scope_env:
         legacy_scope_envs = summary.get("scope_envs") or []
         if legacy_scope_envs:
@@ -176,6 +177,7 @@ def create_backup(api: ZabbixAPI, impact_plan_path: str, backup_path: str) -> Ba
             zabbix_url=str(getattr(api, "api_url", "")),
             scope_as=scope_as,
             scope_env=scope_env,
+            scope_gas=scope_gas,
         ),
         impact_plan=raw_impact_plan,
         hostgroups=[
@@ -245,12 +247,14 @@ def main() -> int:
         ".json",
         scope_as=config.SCOPE_AS,
         scope_env=config.SCOPE_ENV,
+        scope_gas=config.SCOPE_GAS,
         label="impact plan JSON",
     )
 
     impact_plan = load_impact_plan(impact_plan_path)
     impact_summary = impact_plan.get("summary") or {}
     scope_env = str(impact_summary.get("scope_env") or "").strip()
+    scope_gas = normalize_values(impact_summary.get("scope_gas") or [])
     if not scope_env:
         legacy_scope_envs = impact_summary.get("scope_envs") or []
         if legacy_scope_envs:
@@ -258,6 +262,7 @@ def main() -> int:
     backup_path = build_backup_path(
         normalize_values(impact_summary.get("scope_as") or []),
         scope_env,
+        scope_gas,
     )
 
     connection = config.load_zabbix_connection()

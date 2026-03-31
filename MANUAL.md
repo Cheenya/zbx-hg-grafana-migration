@@ -112,6 +112,7 @@ GRAFANA_AUDIT_ORGIDS = (17, 23)
 ```python
 SCOPE_AS: tuple[str, ...] = ()
 SCOPE_ENV: str = ""
+SCOPE_GAS: tuple[str, ...] = ()
 ORG_DOMAIN_SUFFIXES: dict[str, tuple[str, ...]] = {
     "BNK": ("rosgap.com", "bnkrf.ru"),
     "DOM": ("ahuel1.ru", "dom.ru"),
@@ -125,6 +126,7 @@ ORG_DOMAIN_SUFFIXES: dict[str, tuple[str, ...]] = {
 
 - `SCOPE_AS` обязателен;
 - `SCOPE_ENV` опционален.
+- `SCOPE_GAS` опционален.
 
 Логика `ENV` фиксированная:
 - `PROD` -> `PROD`
@@ -168,6 +170,18 @@ SCOPE_ENV = "NONPROD"
 SCOPE_ENV = "PROD"
 ```
 
+- без фильтра по GAS:
+
+```python
+SCOPE_GAS = ()
+```
+
+- только нужные GAS:
+
+```python
+SCOPE_GAS = ("TEAM1", "TEAM2")
+```
+
 ### 4.4. Runtime
 
 ```python
@@ -208,7 +222,7 @@ SOURCE_GRAFANA_PLAN_XLSX = ""
 - `SOURCE_GRAFANA_PLAN_XLSX` — вход для `apply_grafana_plan.py`.
 
 Если любой `SOURCE_*` пустой, соответствующий скрипт по умолчанию берёт самый свежий файл из `OUTPUT_DIR`.
-Если `SCOPE_AS` / `SCOPE_ENV` или `GRAFANA_AUDIT_ORGIDS` заданы, сначала ищется самый свежий файл именно под этот scope.
+Если `SCOPE_AS` / `SCOPE_ENV` / `SCOPE_GAS` или `GRAFANA_AUDIT_ORGIDS` заданы, сначала ищется самый свежий файл именно под этот scope.
 
 ### 4.6. Теги
 
@@ -305,6 +319,9 @@ MAPPING_FORBID_ENV_MISMATCH = True
 
 `HOSTS_SKIPPED_ENV`
 - хосты выбранной AS, исключённые по `SCOPE_ENV`.
+
+`HOSTS_SKIPPED_GAS`
+- хосты выбранной AS, исключённые по `SCOPE_GAS`.
 
 `GROUPS_OLD`
 - legacy host-groups в scope.

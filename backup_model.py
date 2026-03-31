@@ -12,6 +12,7 @@ class BackupMeta:
     zabbix_url: str = ""
     scope_as: List[str] = field(default_factory=list)
     scope_env: str = ""
+    scope_gas: List[str] = field(default_factory=list)
 
 
 @dataclass

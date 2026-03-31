@@ -37,6 +37,7 @@ def main() -> int:
         ".json",
         scope_as=config.SCOPE_AS,
         scope_env=config.SCOPE_ENV,
+        scope_gas=config.SCOPE_GAS,
         label="impact plan JSON",
     )
     backup_path = resolve_input_artifact(
@@ -45,6 +46,7 @@ def main() -> int:
         ".json.gz",
         scope_as=config.SCOPE_AS,
         scope_env=config.SCOPE_ENV,
+        scope_gas=config.SCOPE_GAS,
         label="backup file",
     )
 
@@ -60,6 +62,7 @@ def main() -> int:
 
     failures: List[str] = []
     summary_scope_env = str(summary.get("scope_env") or "").strip()
+    summary_scope_gas = _sorted_ids(summary.get("scope_gas") or [])
     if not summary_scope_env:
         legacy_scope_envs = summary.get("scope_envs") or []
         if legacy_scope_envs:
@@ -69,6 +72,8 @@ def main() -> int:
         failures.append("scope_as mismatch")
     if str(backup.meta.scope_env or "").strip() != summary_scope_env:
         failures.append("scope_env mismatch")
+    if _sorted_ids(backup.meta.scope_gas) != summary_scope_gas:
+        failures.append("scope_gas mismatch")
 
     checks = [
         ("hostgroups", [str(item.get("groupid") or "") for item in (backup_scope.get("hostgroups") or [])], [item.groupid for item in backup.hostgroups]),

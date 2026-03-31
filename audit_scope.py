@@ -40,15 +40,16 @@ def main() -> int:
 
     scope_as = normalize_values(config.SCOPE_AS)
     scope_env = normalize_scope_env(config.SCOPE_ENV)
+    scope_gas = normalize_values(config.SCOPE_GAS)
     if not scope_as:
         raise RuntimeError("Scope is empty. Set SCOPE_AS in config.py.")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_xlsx = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp)
-    default_json = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".json", timestamp=timestamp)
-    default_mapping = build_artifact_path(config.MAPPING_PLAN_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp)
-    default_grafana = build_artifact_path(config.GRAFANA_REPORT_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp)
-    default_log = build_artifact_path(config.AUDIT_LOG_PREFIX, scope_as, scope_env, ".log", timestamp=timestamp)
+    default_xlsx = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, scope_gas, ".xlsx", timestamp=timestamp)
+    default_json = build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, scope_gas, ".json", timestamp=timestamp)
+    default_mapping = build_artifact_path(config.MAPPING_PLAN_PREFIX, scope_as, scope_env, scope_gas, ".xlsx", timestamp=timestamp)
+    default_grafana = build_artifact_path(config.GRAFANA_REPORT_PREFIX, scope_as, scope_env, scope_gas, ".xlsx", timestamp=timestamp)
+    default_log = build_artifact_path(config.AUDIT_LOG_PREFIX, scope_as, scope_env, scope_gas, ".log", timestamp=timestamp)
     out_xlsx = args.out_xlsx or default_xlsx
     out_json = args.out_json or default_json
     out_mapping = args.out_mapping or default_mapping
@@ -56,7 +57,7 @@ def main() -> int:
     out_log = args.out_log or default_log
 
     logger = AuditLogger(out_log)
-    logger.log(f"audit: started scope_as={scope_as} scope_env={scope_env or '(all)'}")
+    logger.log(f"audit: started scope_as={scope_as} scope_env={scope_env or '(all)'} scope_gas={scope_gas or ['(all)']}")
     logger.log(f"audit: outputs xlsx={out_xlsx} json={out_json} mapping={out_mapping} grafana={out_grafana}")
 
     try:
@@ -68,7 +69,7 @@ def main() -> int:
         logger.log("audit: zabbix login ok")
 
         logger.log("audit: running zabbix inventory")
-        report = build_scope_report(zabbix, scope_as, scope_env, log=logger.log)
+        report = build_scope_report(zabbix, scope_as, scope_env, scope_gas, log=logger.log)
         report["summary"]["audit_log_path"] = out_log
 
         if config.ENABLE_GRAFANA:

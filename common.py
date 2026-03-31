@@ -309,10 +309,11 @@ def autosize_columns(ws, min_width: int = 10, max_width: int = 80) -> None:
         ws.column_dimensions[letter].width = max(min_width, min(max_width, max_len + 2))
 
 
-def build_scope_part(scope_as: Sequence[str], scope_env: str) -> str:
+def build_scope_part(scope_as: Sequence[str], scope_env: str, scope_gas: Sequence[str] | None = None) -> str:
     scope_chunks: List[str] = []
     as_values = normalize_values(scope_as)
     env_value = str(scope_env or "").strip()
+    gas_values = normalize_values(scope_gas or [])
 
     if as_values:
         if len(as_values) <= 3:
@@ -325,6 +326,12 @@ def build_scope_part(scope_as: Sequence[str], scope_env: str) -> str:
     if env_value:
         scope_chunks.append(re.sub(r"[^A-Za-z0-9_-]", "_", env_value))
 
+    if gas_values:
+        if len(gas_values) <= 3:
+            scope_chunks.append("gas-" + "-".join(re.sub(r"[^A-Za-z0-9_-]", "_", item) for item in gas_values))
+        else:
+            scope_chunks.append(f"GAS{len(gas_values)}")
+
     return "_".join(scope_chunks)
 
 
@@ -332,12 +339,13 @@ def build_artifact_path(
     prefix: str,
     scope_as: Sequence[str],
     scope_env: str,
+    scope_gas: Sequence[str] | None,
     extension: str,
     timestamp: Optional[str] = None,
 ) -> str:
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     stamp = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
-    scope_part = build_scope_part(scope_as, scope_env)
+    scope_part = build_scope_part(scope_as, scope_env, scope_gas)
     ext = str(extension or "").strip()
     if ext and not ext.startswith("."):
         ext = f".{ext}"
@@ -368,11 +376,11 @@ def build_org_artifact_path(
     return os.path.join(config.OUTPUT_DIR, f"{prefix}_{scope_part}_{stamp}{ext}")
 
 
-def build_output_paths(scope_as: Sequence[str], scope_env: str) -> Tuple[str, str]:
+def build_output_paths(scope_as: Sequence[str], scope_env: str, scope_gas: Sequence[str] | None = None) -> Tuple[str, str]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return (
-        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp),
-        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, ".json", timestamp=timestamp),
+        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, scope_gas, ".xlsx", timestamp=timestamp),
+        build_artifact_path(config.OUTPUT_PREFIX, scope_as, scope_env, scope_gas, ".json", timestamp=timestamp),
     )
 
 
@@ -383,6 +391,7 @@ def resolve_input_artifact(
     *,
     scope_as: Sequence[str] | None = None,
     scope_env: str = "",
+    scope_gas: Sequence[str] | None = None,
     org_ids: Sequence[int] | None = None,
     label: str = "artifact",
 ) -> str:
@@ -415,11 +424,12 @@ def resolve_input_artifact(
     normalized_org_ids = [int(item) for item in (org_ids or [])]
     normalized_scope_as = normalize_values(scope_as)
     normalized_scope_env = str(scope_env or "").strip()
+    normalized_scope_gas = normalize_values(scope_gas or [])
 
     if normalized_org_ids:
         preferred_stem = f"{prefix}_{build_org_scope_part(normalized_org_ids)}_"
-    elif normalized_scope_as or normalized_scope_env:
-        preferred_stem = f"{prefix}_{build_scope_part(normalized_scope_as, normalized_scope_env)}_"
+    elif normalized_scope_as or normalized_scope_env or normalized_scope_gas:
+        preferred_stem = f"{prefix}_{build_scope_part(normalized_scope_as, normalized_scope_env, normalized_scope_gas)}_"
 
     selected_pool = candidates
     if preferred_stem:

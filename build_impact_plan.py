@@ -22,6 +22,7 @@ def main() -> int:
         ".json",
         scope_as=config.SCOPE_AS,
         scope_env=config.SCOPE_ENV,
+        scope_gas=config.SCOPE_GAS,
         label="audit JSON",
     )
     mapping_plan_path = resolve_input_artifact(
@@ -30,6 +31,7 @@ def main() -> int:
         ".xlsx",
         scope_as=config.SCOPE_AS,
         scope_env=config.SCOPE_ENV,
+        scope_gas=config.SCOPE_GAS,
         label="mapping plan XLSX",
     )
 
@@ -37,6 +39,7 @@ def main() -> int:
     inventory = audit_report.get("inventory") or {}
     scope_as = normalize_values(inventory.get("scope_as") or [])
     scope_env = str(inventory.get("scope_env") or "").strip()
+    scope_gas = normalize_values(inventory.get("scope_gas") or [])
     if not scope_env:
         legacy_scope_envs = inventory.get("scope_envs") or []
         if legacy_scope_envs:
@@ -45,8 +48,8 @@ def main() -> int:
     selected_mappings = get_selected_mappings(mapping_rows)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    default_xlsx = build_artifact_path(config.IMPACT_PLAN_PREFIX, scope_as, scope_env, ".xlsx", timestamp=timestamp)
-    default_json = build_artifact_path(config.IMPACT_PLAN_PREFIX, scope_as, scope_env, ".json", timestamp=timestamp)
+    default_xlsx = build_artifact_path(config.IMPACT_PLAN_PREFIX, scope_as, scope_env, scope_gas, ".xlsx", timestamp=timestamp)
+    default_json = build_artifact_path(config.IMPACT_PLAN_PREFIX, scope_as, scope_env, scope_gas, ".json", timestamp=timestamp)
     out_xlsx = args.out_xlsx or default_xlsx
     out_json = args.out_json or default_json
 

@@ -16,6 +16,7 @@ def restore_backup(api: ZabbixAPI, backup_path: str) -> None:
     data = load_backup(backup_path)
     current_scope_as = normalize_values(config.SCOPE_AS)
     current_scope_env = normalize_scope_env(config.SCOPE_ENV)
+    current_scope_gas = normalize_values(config.SCOPE_GAS)
 
     if str(data.meta.zabbix_url or "").strip() and str(data.meta.zabbix_url).strip() != str(getattr(api, "api_url", "")).strip():
         raise RuntimeError(
@@ -30,6 +31,12 @@ def restore_backup(api: ZabbixAPI, backup_path: str) -> None:
     if str(data.meta.scope_env or "").strip() != str(current_scope_env or "").strip():
         raise RuntimeError(
             f"Backup scope_env mismatch: backup={data.meta.scope_env} current={current_scope_env}"
+        )
+    if current_scope_gas and sorted(str(item).strip().upper() for item in data.meta.scope_gas) != sorted(
+        str(item).strip().upper() for item in current_scope_gas
+    ):
+        raise RuntimeError(
+            f"Backup scope_gas mismatch: backup={data.meta.scope_gas} current={current_scope_gas}"
         )
 
     action_allowed = {
@@ -128,6 +135,7 @@ def main() -> int:
         ".json.gz",
         scope_as=config.SCOPE_AS,
         scope_env=config.SCOPE_ENV,
+        scope_gas=config.SCOPE_GAS,
         label="backup file",
     )
 
