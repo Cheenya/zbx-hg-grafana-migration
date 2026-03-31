@@ -66,7 +66,6 @@ SOURCE_GRAFANA_PLAN_XLSX: str = ""
 
 # Теги.
 TAG_AS: str = "AS"
-TAG_ASN: str = "ASN"
 TAG_ENV: str = "ENV"
 TAG_GAS: str = "GAS"
 TAG_GUEST_NAME: str = "GUEST-NAME"

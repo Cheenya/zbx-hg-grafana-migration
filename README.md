@@ -19,7 +19,7 @@
 - читает Zabbix без изменений;
 - берёт scope по `SCOPE_AS` и опционально по каноническому `SCOPE_ENV`;
 - опционально маппит `SCOPE_AS` на `GRAFANA_ORGIDS`;
-- учитывает `AS`, `ASN`, `ENV`, `GAS`, `GUEST-NAME`;
+- учитывает `AS`, `ENV`, `GAS`, `GUEST-NAME`;
 - формирует ожидаемые standard host-groups по правилам:
   - `$ORG/ENV/#ENV`
   - `$ORG/AS/#AS`

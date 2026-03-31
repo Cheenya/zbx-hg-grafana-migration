@@ -17,7 +17,6 @@ HOST_HEADERS = [
     "status_label",
     "ORG",
     "AS",
-    "ASN",
     "GAS",
     "GUEST_NAME",
     "OS_FAMILY",
@@ -43,7 +42,6 @@ UNKNOWN_HOST_HEADERS = [
     "status_label",
     "ORG",
     "AS",
-    "ASN",
     "GAS",
     "GUEST_NAME",
     "OS_FAMILY",
@@ -61,7 +59,6 @@ SKIPPED_HOST_HEADERS = [
     "status_label",
     "ORG",
     "AS",
-    "ASN",
     "GAS",
     "GUEST_NAME",
     "OS_FAMILY",
@@ -245,7 +242,6 @@ def save_inventory_json(report: Dict[str, Any], path: str) -> None:
         "hosts_skipped_env": report["hosts_skipped_env"],
         "host_expected_groups": report["host_expected_groups"],
         "env_summary": report["env_summary"],
-        "asn_summary": report["asn_summary"],
         "gas_summary": report["gas_summary"],
         "guest_name_summary": report["guest_name_summary"],
         "groups_old": report["groups_old"],
@@ -284,13 +280,6 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
         ["AS", "ENV_RAW", "ENV_SCOPE", "hosts_count", "enabled_hosts", "disabled_hosts", "legacy_hosts", "sample_hosts"],
     )
 
-    asn_ws = wb.create_sheet("ASN_SUMMARY")
-    _append_rows(
-        asn_ws,
-        report["asn_summary"],
-        ["AS", "ASN", "hosts_count", "enabled_hosts", "disabled_hosts", "legacy_hosts", "sample_hosts"],
-    )
-
     gas_ws = wb.create_sheet("GAS_SUMMARY")
     _append_rows(
         gas_ws,
@@ -326,7 +315,6 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
             "status_label",
             "ORG",
             "AS",
-            "ASN",
             "ENV_RAW",
             "ENV_SCOPE",
             "GAS",
@@ -362,7 +350,6 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
             "status_label",
             "ORG",
             "AS",
-            "ASN",
             "ENV_RAW",
             "ENV_SCOPE",
             "GAS",
@@ -455,7 +442,6 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
             "status_label",
             "ORG",
             "AS",
-            "ASN",
             "GAS",
             "GUEST_NAME",
             "OS_FAMILY",

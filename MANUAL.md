@@ -214,7 +214,6 @@ SOURCE_GRAFANA_PLAN_XLSX = ""
 
 ```python
 TAG_AS = "AS"
-TAG_ASN = "ASN"
 TAG_ENV = "ENV"
 TAG_GAS = "GAS"
 TAG_GUEST_NAME = "GUEST-NAME"
@@ -230,7 +229,6 @@ EXCLUDE_UNKNOWN_FROM_STATS = True
 
 Хост считается `UNKNOWN`, если:
 - `AS == UNKNOWN`;
-- `ASN == UNKNOWN`;
 - есть группа `UNKNOWN`;
 - отсутствует `AS`.
 
@@ -277,11 +275,11 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - сводка по scope и количествам объектов.
 
 `UNKNOWN_HOSTS`
-- хосты с `AS/ASN == UNKNOWN`, группой `UNKNOWN` или без `AS`.
+- хосты с `AS == UNKNOWN`, группой `UNKNOWN` или без `AS`.
 
 `HOSTS`
 - основные хосты scope;
-- показывает `ORG`, `AS`, `ASN`, `GAS`, `GUEST_NAME`, `OS_FAMILY`, `ENV_RAW`, `ENV_SCOPE`;
+- показывает `ORG`, `AS`, `GAS`, `GUEST_NAME`, `OS_FAMILY`, `ENV_RAW`, `ENV_SCOPE`;
 - показывает фактически назначенные standard groups по категориям.
 
 `HOSTS_OLD_SCOPE`

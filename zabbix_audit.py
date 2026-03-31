@@ -172,13 +172,10 @@ def _is_unknown_value(value: str | None) -> bool:
 def _unknown_reasons(host: Dict[str, Any]) -> List[str]:
     tags = host.get("tags") or []
     as_value = get_tag_value(tags, config.TAG_AS)
-    asn_value = get_tag_value(tags, config.TAG_ASN)
 
     reasons: List[str] = []
     if _is_unknown_value(as_value):
         reasons.append("AS=UNKNOWN")
-    if _is_unknown_value(asn_value):
-        reasons.append("ASN=UNKNOWN")
 
     group_names = [
         str(group.get("name") or "")
@@ -667,7 +664,6 @@ def _build_host_enrichment_rows(
                 "status_label": host_row.get("status_label", ""),
                 "ORG": host_row.get("ORG", ""),
                 "AS": host_row.get("AS", ""),
-                "ASN": host_row.get("ASN", ""),
                 "ENV_RAW": host_row.get("ENV_RAW", ""),
                 "ENV_SCOPE": host_row.get("ENV_SCOPE", ""),
                 "GAS": host_row.get("GAS", ""),
@@ -817,7 +813,6 @@ def build_scope_report(
     scope_hosts_no_any_new: List[Dict[str, Any]] = []
     scope_hosts_skipped_env: List[Dict[str, Any]] = []
     scope_groupids: Set[str] = set()
-    scope_asn_values: Set[str] = set()
     unknown_rows: List[Dict[str, Any]] = []
     old_bucket: Dict[str, Dict[str, Any]] = defaultdict(_ensure_old_bucket_row)
     standard_bucket: Dict[str, Dict[str, Any]] = defaultdict(_ensure_standard_bucket_row)
@@ -825,9 +820,6 @@ def build_scope_report(
     host_expected_groups: List[Dict[str, Any]] = []
     host_mapping_targets: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     env_summary_bucket: Dict[Any, Dict[str, Any]] = defaultdict(
-        lambda: {"hostids": set(), "host_names": set(), "replace_hostids": set(), "disabled_hostids": set()}
-    )
-    asn_summary_bucket: Dict[Any, Dict[str, Any]] = defaultdict(
         lambda: {"hostids": set(), "host_names": set(), "replace_hostids": set(), "disabled_hostids": set()}
     )
     gas_summary_bucket: Dict[Any, Dict[str, Any]] = defaultdict(
@@ -844,7 +836,6 @@ def build_scope_report(
         env_value_raw = get_tag_value(tags, config.TAG_ENV)
         env_raw_upper = normalize_upper_tag_value(env_value_raw)
         env_value = canonical_env_value(env_value_raw)
-        asn_value = get_tag_value(tags, config.TAG_ASN)
         gas_value = get_tag_value(tags, config.TAG_GAS)
         gas_upper = normalize_upper_tag_value(gas_value)
         guest_name = get_tag_value(tags, config.TAG_GUEST_NAME)
@@ -869,7 +860,6 @@ def build_scope_report(
                         "status_label": _host_status_label(host.get("status")),
                         "ORG": resolve_host_org([str(host.get("host") or ""), str(host.get("name") or "")], group_names)[0],
                         "AS": as_value or "",
-                        "ASN": asn_value or "",
                         "GAS": gas_value or "",
                         "GUEST_NAME": guest_name or "",
                         "OS_FAMILY": os_family,
@@ -893,7 +883,6 @@ def build_scope_report(
             "status_label": _host_status_label(host.get("status")),
             "ORG": "",
             "AS": as_value or "",
-            "ASN": asn_value or "",
             "GAS": gas_value or "",
             "GUEST_NAME": guest_name or "",
             "OS_FAMILY": os_family,
@@ -918,9 +907,6 @@ def build_scope_report(
             host_row["skip_reason"] = "ENV mismatch"
             scope_hosts_skipped_env.append(host_row)
             continue
-
-        if asn_value:
-            scope_asn_values.add(asn_value)
 
         org_value, org_reasons = resolve_host_org([str(host.get("host") or ""), str(host.get("name") or "")], group_names)
         host_row["ORG"] = org_value
@@ -1018,7 +1004,6 @@ def build_scope_report(
                 "status_label": _host_status_label(host.get("status")),
                 "ORG": org_value,
                 "AS": as_upper,
-                "ASN": asn_value or "",
                 "GAS": gas_upper,
                 "GUEST_NAME": guest_name or "",
                 "OS_FAMILY": os_family,
@@ -1101,14 +1086,6 @@ def build_scope_report(
         _touch_value_summary(
             env_summary_bucket,
             (as_value or "", _display_value(env_value_raw), _display_value(env_value)),
-            host_id,
-            host_name,
-            replace_candidate,
-            is_disabled,
-        )
-        _touch_value_summary(
-            asn_summary_bucket,
-            (as_value or "", _display_value(asn_value)),
             host_id,
             host_name,
             replace_candidate,
@@ -1269,8 +1246,6 @@ def build_scope_report(
                 continue
             if tag_name == config.TAG_AS and tag_value.strip().lower() in scope_as_lower:
                 matching_filters.append(f"{tag_name}={tag_value}")
-            elif tag_name == config.TAG_ASN and tag_value in scope_asn_values:
-                matching_filters.append(f"{tag_name}={tag_value}")
             elif scope_env_lower and tag_name == config.TAG_ENV and canonical_env_value(tag_value).strip().lower() in scope_env_lower:
                 matching_filters.append(f"{tag_name}={tag_value}")
 
@@ -1401,7 +1376,6 @@ def build_scope_report(
     ]
 
     env_summary_rows = _value_summary_rows(env_summary_bucket, ["AS", "ENV_RAW", "ENV_SCOPE"], config.GROUP_SAMPLE_HOSTS)
-    asn_summary_rows = _value_summary_rows(asn_summary_bucket, ["AS", "ASN"], config.GROUP_SAMPLE_HOSTS)
     gas_summary_rows = _value_summary_rows(gas_summary_bucket, ["AS", "GAS"], config.GROUP_SAMPLE_HOSTS)
     guest_name_summary_rows = _value_summary_rows(guest_name_summary_bucket, ["AS", "GUEST_NAME"], config.GROUP_SAMPLE_HOSTS)
     expected_group_rows = _expected_bucket_rows(expected_bucket, config.GROUP_SAMPLE_HOSTS)
@@ -1419,7 +1393,6 @@ def build_scope_report(
         "hosts_skipped_env": len(scope_hosts_skipped_env),
         "unknown_hosts": len(unknown_rows),
         "env_values": len(env_summary_rows),
-        "asn_values": len(asn_summary_rows),
         "gas_values": len(gas_summary_rows),
         "guest_name_values": len(guest_name_summary_rows),
         "old_groups": len(old_bucket),
@@ -1453,7 +1426,6 @@ def build_scope_report(
             ),
         ),
         "env_summary": env_summary_rows,
-        "asn_summary": asn_summary_rows,
         "gas_summary": gas_summary_rows,
         "guest_name_summary": guest_name_summary_rows,
         "groups_old": _old_bucket_rows(old_bucket, config.GROUP_SAMPLE_HOSTS),
