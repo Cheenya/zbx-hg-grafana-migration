@@ -1396,7 +1396,6 @@ def build_scope_report(
 
     mapping_plan_rows = _build_mapping_plan_rows(old_bucket, standard_bucket, expected_bucket, host_mapping_targets)
     mapping_candidates = _mapping_candidates_by_oldid(mapping_plan_rows)
-    old_scope_groupids = {str(data["groupid"]) for data in old_bucket.values() if str(data.get("groupid") or "").strip()}
     object_old_scope_groupids = {
         str(data["groupid"])
         for group_name, data in old_bucket.items()
@@ -1522,14 +1521,9 @@ def build_scope_report(
     scoped_user_ids: Set[str] = set()
     for usergroup in usergroups:
         rights = usergroup.get("hostgroup_rights") or []
-        all_right_groupids: Set[str] = {
-            str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")
-            for right in rights
-            if str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "").strip()
-        }
         touched_old_rights: List[str] = []
         touched_new_rights: List[str] = []
-        for index, right in enumerate(rights):
+        for right in rights:
             group_id = str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")
             if group_id in object_old_scope_groupids:
                 touched_old_rights.append(f"{groupid_to_name.get(group_id, group_id)}:{right.get('permission')}")

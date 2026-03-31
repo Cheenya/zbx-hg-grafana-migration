@@ -11,31 +11,6 @@ from common import autosize_columns, join_sorted, parse_standard_group
 from mapping_plan import MAPPING_PLAN_HEADERS
 
 
-HOST_HEADERS = [
-    "hostid",
-    "host",
-    "name",
-    "status",
-    "status_label",
-    "ORG",
-    "AS",
-    "GAS",
-    "GUEST_NAME",
-    "OS_FAMILY",
-    "ENV_RAW",
-    "ENV_SCOPE",
-    "has_old_groups",
-    "has_standard_groups",
-    "missing_any_new_group",
-    "old_groups",
-    "standard_groups",
-    "env_groups",
-    "as_groups",
-    "gas_groups",
-    "os_groups",
-    "other_groups",
-]
-
 MISMATCH_OLDORG_HEADERS = [
     "hostid",
     "host",
@@ -71,39 +46,6 @@ MISMATCH_LEGACY_ENV_HEADERS = [
     "tag_env",
     "old_groups",
     "mismatches",
-]
-
-UNKNOWN_HOST_HEADERS = [
-    "hostid",
-    "host",
-    "name",
-    "status",
-    "status_label",
-    "ORG",
-    "AS",
-    "GAS",
-    "GUEST_NAME",
-    "OS_FAMILY",
-    "ENV_RAW",
-    "ENV_SCOPE",
-    "groups",
-    "unknown_reasons",
-]
-
-SKIPPED_HOST_HEADERS = [
-    "hostid",
-    "host",
-    "name",
-    "status",
-    "status_label",
-    "ORG",
-    "AS",
-    "GAS",
-    "GUEST_NAME",
-    "OS_FAMILY",
-    "ENV_RAW",
-    "ENV_SCOPE",
-    "skip_reason",
 ]
 
 GRAFANA_SUMMARY_HEADERS = [
@@ -332,99 +274,6 @@ HOST_EXPECTED_HEADERS = [
     "group_kind",
     "exists_in_zabbix",
     "on_host",
-]
-
-HOST_ENRICHMENT_HEADERS = [
-    "hostid",
-    "host",
-    "name",
-    "status",
-    "status_label",
-    "ORG",
-    "AS",
-    "ENV_RAW",
-    "ENV_SCOPE",
-    "GAS",
-    "GUEST_NAME",
-    "OS_FAMILY",
-    "old_groups",
-    "standard_groups",
-    "expected_env_groups",
-    "expected_as_groups",
-    "expected_gas_groups",
-    "expected_os_groups",
-    "catalog_existing_groups",
-    "catalog_missing_groups",
-    "host_present_expected_groups",
-    "host_missing_expected_groups",
-    "suggested_pairs",
-    "suggested_new_groups",
-    "host_action",
-    "unresolved_reasons",
-    "manual_required",
-]
-
-ZABBIX_MAPPING_PREVIEW_HEADERS = [
-    "object_type",
-    "object_id",
-    "object_name",
-    "where_found",
-    "field_path",
-    "old_group",
-    "old_groupid",
-    "candidate_new_group",
-    "candidate_new_groupid",
-    "candidate_rank",
-    "candidate_count",
-    "target_kind",
-    "target_exists",
-    "mapping_status",
-    "object_has_candidate_new",
-    "include_reason",
-    "manual_required",
-    "host_action",
-    "hosts_need_add_new",
-    "hosts_already_have_new",
-]
-
-ACTION_HEADERS = [
-    "actionid",
-    "name",
-    "status",
-    "where_found",
-    "matched_groupids",
-    "matched_group_names",
-    "candidate_new_groupids_present",
-    "candidate_new_group_names_present",
-    "include_reason",
-    "recipient_usergroups",
-    "recipient_users",
-    "recipients_media",
-]
-
-USERGROUP_HEADERS = [
-    "usrgrpid",
-    "name",
-    "rights_on_old_groups",
-    "rights_on_new_groups",
-    "candidate_new_groups_already_present",
-    "matching_tag_filters",
-    "include_reason",
-    "users",
-    "users_media",
-    "is_action_recipient",
-]
-
-MAINTENANCE_HEADERS = [
-    "maintenanceid",
-    "name",
-    "matched_groupids",
-    "matched_group_names",
-    "candidate_new_groupids_present",
-    "candidate_new_group_names_present",
-    "include_reason",
-    "active_since",
-    "active_till",
 ]
 
 HOST_VIEW_HEADERS = [
