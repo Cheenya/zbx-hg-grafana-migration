@@ -444,16 +444,15 @@ MAPPING_FORBID_ENV_MISMATCH = True
 Главные поля:
 - `selected` — выставляется руками в `yes`, если именно эту пару нужно использовать;
 - `old_group`, `old_groupid`;
+- `legacy_env_token` — ENV-токен, распознанный в legacy-группе;
 - `new_group`, `new_groupid`;
 - `target_kind`;
 - `target_exists`;
 - `candidate_rank`;
 - `candidate_count`;
-- `intersection`;
+- `old_hosts_count`;
 - `target_scope_hosts`;
-- `old_coverage`;
-- `new_coverage`;
-- `jaccard`;
+- `new_hosts_count`;
 - `old_orgs`, `old_envs`, `old_env_scopes`;
 - `target_env_raw`;
 - `auto_reason`;
@@ -467,10 +466,12 @@ MAPPING_FORBID_ENV_MISMATCH = True
 - один `new_group` тоже не должен быть выбран для нескольких `old_group`.
 
 Текущая автологика:
-- если у `old_group` есть ровно один существующий target-кандидат, строка ставится `selected=yes` автоматически;
+- частотный анализ больше не используется;
+- если в legacy-группе найден ENV-токен, основной target строится как `ORG/AS/#AS/#ENV`;
+- если ENV-токена в legacy-группе нет, основной target строится как `ORG/AS/#AS`;
+- для legacy-групп с ENV дополнительно показывается fallback-кандидат `ORG/AS/#AS`, но он остаётся ручным;
 - если target-группа не существует в каталоге Zabbix, строка получает `status=missing_target_group`;
-- если по хостам видны разные `ORG/AS`, строка получает `status=mixed_host_tags`;
-- всё, где кандидатов несколько, остаётся на ручную проверку.
+- если по хостам видны разные `ORG/AS`, строка получает `status=mixed_host_tags`.
 
 
 ## 7. Что делает `build_impact_plan.py`
@@ -483,6 +484,10 @@ MAPPING_FORBID_ENV_MISMATCH = True
 1. Читает audit json.
 2. Читает `mapping_plan.xlsx`.
 3. Берёт только строки с `selected=yes`.
+4. Формирует отдельные листы:
+   - `HOST_ENRICH_PLAN`
+   - `OBJECT_MAPPING_PLAN`
+   - `ZABBIX_CHANGES`
 4. Строит change points:
    - `host.groups += expected_groupid` для отсутствующих, но существующих в каталоге standard groups;
    - `action.filter.conditions[*].value`

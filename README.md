@@ -31,7 +31,12 @@
   - `$ORG/OS/(LINUX|WINDOWS)/#ENV`
 - проверяет существование этих групп в `Data collection -> Host groups`;
 - отдельно показывает `UNKNOWN`-хосты;
+- отдельно показывает `MISMATCHES`:
+  - домен хоста vs legacy ORG;
+  - домен хоста vs ORG прокси;
+  - ENV в legacy-группе vs реальный тег `ENV`;
 - строит `MAPPING_PLAN` c кандидатами `OLD -> NEW`;
+- не использует частотный анализ для выбора пары `OLD -> NEW`;
 - строит `HOST_ENRICHMENT` по хостам;
 - ищет только `OLD`-группы в Grafana dashboards;
 - сохраняет:
@@ -90,6 +95,9 @@
   - точные change points в Zabbix;
   - exact/pattern impact по Grafana;
   - `backup_scope` для backup/restore;
+- раскладывает Zabbix-изменения на:
+  - `HOST_ENRICH_PLAN`
+  - `OBJECT_MAPPING_PLAN`
 - сохраняет:
   - `impact_plan_v2_*.xlsx`
   - `impact_plan_v2_*.json`

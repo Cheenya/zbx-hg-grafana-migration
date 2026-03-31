@@ -61,6 +61,18 @@ def write_impact_plan_xlsx(data: Dict[str, Any], path: str) -> None:
         zbx_ws.append([row.get(header, "") for header in zbx_headers])
     autosize_columns(zbx_ws)
 
+    host_ws = wb.create_sheet("HOST_ENRICH_PLAN")
+    host_ws.append(zbx_headers)
+    for row in data.get("host_enrich_plan") or []:
+        host_ws.append([row.get(header, "") for header in zbx_headers])
+    autosize_columns(host_ws)
+
+    object_ws = wb.create_sheet("OBJECT_MAPPING_PLAN")
+    object_ws.append(zbx_headers)
+    for row in data.get("object_mapping_plan") or []:
+        object_ws.append([row.get(header, "") for header in zbx_headers])
+    autosize_columns(object_ws)
+
     grafana_ws = wb.create_sheet("GRAFANA_CHANGES")
     grafana_headers = [
         "grafana_org_id",
@@ -476,6 +488,8 @@ def build_impact_plan(
         "selected_mappings": len(selected_mappings),
         "zabbix_changes": len(zabbix_changes),
         "host_changes": len(impacted_host_ids),
+        "host_enrich_plan_rows": sum(1 for row in zabbix_changes if str(row.get("object_type") or "") == "host"),
+        "object_mapping_plan_rows": sum(1 for row in zabbix_changes if str(row.get("object_type") or "") != "host"),
         "grafana_changes": len(grafana_changes),
         "backup_hostids": len(backup_scope["hostids"]),
         "backup_hostgroups": len(backup_scope["hostgroups"]),
@@ -497,5 +511,7 @@ def build_impact_plan(
         "selected_mappings": list(selected_mappings),
         "backup_scope": backup_scope,
         "zabbix_changes": zabbix_changes,
+        "host_enrich_plan": [row for row in zabbix_changes if str(row.get("object_type") or "") == "host"],
+        "object_mapping_plan": [row for row in zabbix_changes if str(row.get("object_type") or "") != "host"],
         "grafana_changes": grafana_changes,
     }

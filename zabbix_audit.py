@@ -8,6 +8,7 @@ from api_clients import ZabbixAPI
 from common import (
     build_expected_hostgroups,
     canonical_env_value,
+    extract_legacy_env_token,
     extract_action_groupids,
     extract_action_recipients,
     extract_active_media_sendto,
@@ -19,7 +20,9 @@ from common import (
     normalize_scope_env,
     normalize_upper_tag_value,
     normalize_values,
+    old_group_org,
     parse_standard_group,
+    resolve_org_by_domain_values,
     resolve_host_org,
     resolve_os_family,
     resolve_tagfilter_tag,
@@ -35,7 +38,7 @@ def fetch_hostgroups(api: ZabbixAPI) -> List[Dict[str, Any]]:
 
 def fetch_hosts(api: ZabbixAPI) -> List[Dict[str, Any]]:
     params: Dict[str, Any] = {
-        "output": ["hostid", "host", "name", "status"],
+        "output": ["hostid", "host", "name", "status", "proxyid"],
         "selectGroups": ["groupid", "name"],
         "selectTags": ["tag", "value"],
     }
@@ -91,6 +94,18 @@ def fetch_maintenances(api: ZabbixAPI) -> List[Dict[str, Any]]:
         {
             "output": ["maintenanceid", "name", "active_since", "active_till"],
             "selectGroups": ["groupid", "name"],
+        },
+    )
+
+
+def fetch_proxies(api: ZabbixAPI, proxyids: Sequence[str]) -> List[Dict[str, Any]]:
+    if not proxyids:
+        return []
+    return api.call(
+        "proxy.get",
+        {
+            "output": "extend",
+            "proxyids": list(proxyids),
         },
     )
 
@@ -158,6 +173,16 @@ def _host_status_label(status: Any) -> str:
 def _display_value(value: str | None) -> str:
     text = str(value or "").strip()
     return text or "(empty)"
+
+
+
+def _proxy_identity_values(proxy: Dict[str, Any]) -> List[str]:
+    out: List[str] = []
+    for key in ("name", "host", "address"):
+        value = str(proxy.get(key) or "").strip()
+        if value:
+            out.append(value)
+    return out
 
 
 
@@ -301,6 +326,7 @@ def _ensure_old_bucket_row() -> Dict[str, Any]:
         "as_values": set(),
         "env_raw_values": set(),
         "env_scope_values": set(),
+        "legacy_env_tokens": set(),
     }
 
 
@@ -347,6 +373,7 @@ def _old_bucket_rows(bucket: Dict[str, Dict[str, Any]], sample_limit: int) -> Li
             {
                 "group_name": group_name,
                 "groupid": data["groupid"],
+                "legacy_env_tokens": join_sorted(data["legacy_env_tokens"]),
                 "org_values": join_sorted(data["org_values"]),
                 "as_values": join_sorted(data["as_values"]),
                 "env_raw_values": join_sorted(data["env_raw_values"]),
@@ -420,6 +447,7 @@ def _build_mapping_plan_rows(
         old_as_values = sorted(str(item).strip() for item in old_data["as_values"] if str(item).strip())
         old_env_raws = sorted(str(item).strip() for item in old_data["env_raw_values"] if str(item).strip())
         old_env_scopes = sorted(str(item).strip() for item in old_data["env_scope_values"] if str(item).strip())
+        legacy_env_token = extract_legacy_env_token(old_name)
 
         candidate_state: Dict[str, Dict[str, Any]] = {}
         for hostid in old_hostids:
@@ -442,135 +470,151 @@ def _build_mapping_plan_rows(
                 state["target_scope_hostids"].add(hostid)
 
         rows: List[Dict[str, Any]] = []
-        if not candidate_state:
-            per_old[old_name] = [
-                {
-                    "selected": "",
-                    "AS": join_sorted(old_as_values),
-                    "ORG": join_sorted(old_orgs),
-                    "old_group": old_name,
-                    "old_groupid": str(old_data.get("groupid") or ""),
-                    "new_group": "",
-                    "new_groupid": "",
-                    "target_kind": "",
-                    "target_exists": "",
-                    "candidate_rank": "",
-                    "candidate_count": 0,
-                    "intersection": 0,
-                    "old_hosts_count": old_count,
-                    "target_scope_hosts": 0,
-                    "new_hosts_count": 0,
-                    "old_coverage": 0.0,
-                    "new_coverage": 0.0,
-                    "jaccard": 0.0,
-                    "host_action": "",
-                    "hosts_need_add_new": old_count,
-                    "hosts_already_have_new": 0,
-                    "old_orgs": join_sorted(old_orgs),
-                    "old_envs": join_sorted(old_env_raws),
-                    "old_env_scopes": join_sorted(old_env_scopes),
-                    "target_env_raw": "",
-                    "auto_reason": "",
-                    "top1_new_conflict": "",
-                    "manual_required": "yes",
-                    "status": "no_candidate",
-                    "comment": "",
-                }
-            ]
-            continue
-
-        for state in candidate_state.values():
-            target_name = str(state["group_name"])
-            target_scope_hostids = set(state["target_scope_hostids"])
-            target_group_hostids = set((standard_bucket.get(target_name) or {}).get("hostids") or set())
-            intersection = len(old_hostids.intersection(target_group_hostids))
-            target_scope_hosts = len(target_scope_hostids)
-            new_count = len(target_group_hostids)
-            union_count = old_count + new_count - intersection
-            old_coverage = (intersection / old_count) if old_count else 0.0
-            new_coverage = (intersection / new_count) if new_count else 0.0
-            jaccard = (intersection / union_count) if union_count else 0.0
-            rows.append(
-                {
-                    "selected": "",
-                    "AS": join_sorted(old_as_values),
-                    "ORG": join_sorted(old_orgs),
-                    "old_group": old_name,
-                    "old_groupid": str(old_data.get("groupid") or ""),
-                    "new_group": target_name,
-                    "new_groupid": str(state.get("groupid") or ""),
-                    "target_kind": str(state.get("group_kind") or ""),
-                    "target_exists": "yes" if bool(state.get("target_exists")) else "",
-                    "candidate_rank": 0,
-                    "candidate_count": 0,
-                    "intersection": intersection,
-                    "old_hosts_count": old_count,
-                    "target_scope_hosts": target_scope_hosts,
-                    "new_hosts_count": new_count,
-                    "old_coverage": round(old_coverage, 4),
-                    "new_coverage": round(new_coverage, 4),
-                    "jaccard": round(jaccard, 4),
-                    "host_action": "add_new_if_missing",
-                    "hosts_need_add_new": max(target_scope_hosts - intersection, 0),
-                    "hosts_already_have_new": intersection,
-                    "old_orgs": join_sorted(old_orgs),
-                    "old_envs": join_sorted(old_env_raws),
-                    "old_env_scopes": join_sorted(old_env_scopes),
-                    "target_env_raw": str(state.get("target_env_raw") or ""),
-                    "auto_reason": "",
-                    "top1_new_conflict": "",
-                    "manual_required": "yes",
-                    "status": "candidate",
-                    "comment": "",
-                }
-            )
-
         unique_org = len(old_orgs) == 1
         unique_as = len(old_as_values) == 1
-        unique_env = len(old_env_raws) == 1
-        preferred_kind = "AS_ENV" if unique_env else "AS"
+        mixed_host_tags = not (unique_org and unique_as)
 
-        def sort_key(row: Dict[str, Any]) -> Tuple[int, int, int, int, int, str]:
-            exists_score = 1 if str(row.get("target_exists") or "") == "yes" else 0
-            preferred_score = 1 if str(row.get("target_kind") or "") == preferred_kind else 0
-            return (
-                exists_score,
-                preferred_score,
-                int(row.get("intersection") or 0),
-                int(row.get("target_scope_hosts") or 0),
-                int(row.get("new_hosts_count") or 0),
-                str(row.get("new_group") or "").lower(),
+        def make_empty_row(status: str, manual_required: str, auto_reason: str = "") -> Dict[str, Any]:
+            return {
+                "selected": "",
+                "AS": join_sorted(old_as_values),
+                "ORG": join_sorted(old_orgs),
+                "old_group": old_name,
+                "old_groupid": str(old_data.get("groupid") or ""),
+                "legacy_env_token": legacy_env_token,
+                "new_group": "",
+                "new_groupid": "",
+                "target_kind": "",
+                "target_exists": "",
+                "candidate_rank": 1,
+                "candidate_count": 1,
+                "old_hosts_count": old_count,
+                "target_scope_hosts": 0,
+                "new_hosts_count": 0,
+                "host_action": "",
+                "hosts_need_add_new": old_count,
+                "hosts_already_have_new": 0,
+                "old_orgs": join_sorted(old_orgs),
+                "old_envs": join_sorted(old_env_raws),
+                "old_env_scopes": join_sorted(old_env_scopes),
+                "target_env_raw": legacy_env_token,
+                "auto_reason": auto_reason,
+                "manual_required": manual_required,
+                "status": status,
+                "comment": "",
+            }
+
+        if not candidate_state:
+            per_old[old_name] = [make_empty_row("no_candidate", "yes")]
+            continue
+
+        if mixed_host_tags:
+            row = make_empty_row("mixed_host_tags", "yes")
+            if unique_org:
+                row["ORG"] = old_orgs[0]
+            if unique_as:
+                row["AS"] = old_as_values[0]
+            per_old[old_name] = [row]
+            continue
+
+        target_org = old_orgs[0]
+        target_as = old_as_values[0]
+        base_group_name = f"{target_org}/AS/{target_as}"
+        preferred_group_name = f"{base_group_name}/{legacy_env_token}" if legacy_env_token else base_group_name
+
+        ordered_target_names: List[str] = []
+        ordered_target_names.append(preferred_group_name)
+        if legacy_env_token and base_group_name != preferred_group_name:
+            ordered_target_names.append(base_group_name)
+
+        def build_candidate_row(target_name: str, target_kind: str, status: str, manual_required: str, auto_reason: str = "") -> Dict[str, Any]:
+            state = candidate_state.get(target_name) or {
+                "group_name": target_name,
+                "groupid": "",
+                "group_kind": target_kind,
+                "target_exists": False,
+                "org": target_org,
+                "target_env_raw": legacy_env_token if target_kind == "AS_ENV" else "",
+                "target_scope_hostids": old_hostids if target_kind == "AS" else set(),
+            }
+            target_scope_hostids = set(state.get("target_scope_hostids") or set())
+            if target_kind == "AS" and not target_scope_hostids:
+                target_scope_hostids = set(old_hostids)
+            target_group_hostids = set((standard_bucket.get(target_name) or {}).get("hostids") or set())
+            hosts_already_have_new = len(old_hostids.intersection(target_group_hostids))
+            target_scope_hosts = len(target_scope_hostids) if target_scope_hostids else len(old_hostids)
+            if target_kind == "AS":
+                target_scope_hosts = len(old_hostids)
+            return {
+                "selected": "yes" if status == "auto_selected" else "",
+                "AS": target_as,
+                "ORG": target_org,
+                "old_group": old_name,
+                "old_groupid": str(old_data.get("groupid") or ""),
+                "legacy_env_token": legacy_env_token,
+                "new_group": target_name,
+                "new_groupid": str(state.get("groupid") or ""),
+                "target_kind": target_kind,
+                "target_exists": "yes" if bool(state.get("target_exists")) else "",
+                "candidate_rank": 0,
+                "candidate_count": 0,
+                "old_hosts_count": old_count,
+                "target_scope_hosts": target_scope_hosts,
+                "new_hosts_count": len(target_group_hostids),
+                "host_action": "add_new_if_missing",
+                "hosts_need_add_new": max(target_scope_hosts - hosts_already_have_new, 0),
+                "hosts_already_have_new": hosts_already_have_new,
+                "old_orgs": join_sorted(old_orgs),
+                "old_envs": join_sorted(old_env_raws),
+                "old_env_scopes": join_sorted(old_env_scopes),
+                "target_env_raw": str(state.get("target_env_raw") or ""),
+                "auto_reason": auto_reason,
+                "manual_required": manual_required,
+                "status": status,
+                "comment": "",
+            }
+
+        if legacy_env_token:
+            preferred_exists = bool((candidate_state.get(preferred_group_name) or {}).get("target_exists"))
+            rows.append(
+                build_candidate_row(
+                    preferred_group_name,
+                    "AS_ENV",
+                    "auto_selected" if preferred_exists else "missing_target_group",
+                    "" if preferred_exists else "yes",
+                    "legacy_env_to_as_env" if preferred_exists else "",
+                )
+            )
+            if base_group_name != preferred_group_name:
+                base_exists = bool((candidate_state.get(base_group_name) or {}).get("target_exists"))
+                rows.append(
+                    build_candidate_row(
+                        base_group_name,
+                        "AS",
+                        "fallback_base_candidate" if base_exists else "missing_fallback_group",
+                        "yes",
+                        "",
+                    )
+                )
+        else:
+            base_exists = bool((candidate_state.get(base_group_name) or {}).get("target_exists"))
+            rows.append(
+                build_candidate_row(
+                    base_group_name,
+                    "AS",
+                    "auto_selected" if base_exists else "missing_target_group",
+                    "" if base_exists else "yes",
+                    "legacy_base_to_as" if base_exists else "",
+                )
             )
 
-        rows.sort(key=sort_key, reverse=True)
-        existing_rows = [row for row in rows if str(row.get("target_exists") or "") == "yes"]
-        mixed_host_tags = not (unique_org and unique_as)
+        rows = [row for row in rows if str(row.get("new_group") or "").strip()]
+        if not rows:
+            rows = [make_empty_row("no_candidate", "yes")]
+
         for index, row in enumerate(rows, start=1):
             row["candidate_rank"] = index
             row["candidate_count"] = len(rows)
-            row["top1_new_conflict"] = ""
-            if not str(row.get("target_exists") or ""):
-                row["status"] = "missing_target_group"
-                row["manual_required"] = "yes"
-                row["selected"] = ""
-                continue
-            if mixed_host_tags:
-                row["status"] = "mixed_host_tags"
-                row["manual_required"] = "yes"
-                row["selected"] = ""
-                continue
-            if len(existing_rows) == 1 and row is existing_rows[0]:
-                row["status"] = "auto_selected"
-                row["manual_required"] = ""
-                row["selected"] = "yes"
-                row["auto_reason"] = "single_existing_candidate"
-                continue
-            if index == 1:
-                row["status"] = "preferred_env" if preferred_kind == "AS_ENV" else "preferred_base"
-            else:
-                row["status"] = "candidate"
-            row["manual_required"] = "yes"
-            row["selected"] = ""
         per_old[old_name] = rows
 
     out: List[Dict[str, Any]] = []
@@ -790,6 +834,10 @@ def build_scope_report(
     _log(log, "zabbix: fetching maintenances")
     maintenances = fetch_maintenances(api)
     _log(log, f"zabbix: fetched maintenances={len(maintenances)}")
+    proxy_ids = sorted({str(host.get("proxyid") or "").strip() for host in hosts if str(host.get("proxyid") or "").strip()})
+    _log(log, f"zabbix: fetching proxies ids={len(proxy_ids)}")
+    proxies = fetch_proxies(api, proxy_ids)
+    _log(log, f"zabbix: fetched proxies={len(proxies)}")
 
     hostgroup_lookup = _build_hostgroup_lookup(hostgroups)
     groupid_to_name: Dict[str, str] = {}
@@ -797,6 +845,7 @@ def build_scope_report(
         if group.get("groupid") is None or not group.get("name"):
             continue
         groupid_to_name[str(group["groupid"])] = str(group["name"])
+    proxies_by_id = {str(proxy.get("proxyid") or ""): proxy for proxy in proxies if str(proxy.get("proxyid") or "").strip()}
 
     users_by_id: Dict[str, Dict[str, Any]] = {}
     user_media_by_id: Dict[str, List[str]] = {}
@@ -819,6 +868,9 @@ def build_scope_report(
     expected_bucket: Dict[str, Dict[str, Any]] = defaultdict(_ensure_expected_bucket_row)
     host_expected_groups: List[Dict[str, Any]] = []
     host_mapping_targets: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    mismatch_host_oldorg_rows: List[Dict[str, Any]] = []
+    mismatch_host_proxyorg_rows: List[Dict[str, Any]] = []
+    mismatch_legacy_env_rows: List[Dict[str, Any]] = []
     env_summary_bucket: Dict[Any, Dict[str, Any]] = defaultdict(
         lambda: {"hostids": set(), "host_names": set(), "replace_hostids": set(), "disabled_hostids": set()}
     )
@@ -921,6 +973,8 @@ def build_scope_report(
         os_groups: List[str] = []
         other_groups: List[str] = []
         assigned_standard_lookup: Set[str] = set()
+        old_group_pairs: List[Tuple[str, str]] = []
+        standard_group_rows: List[Tuple[str, str, Dict[str, str]]] = []
 
         for group in filtered_groups:
             group_name = str(group.get("name") or "")
@@ -930,42 +984,14 @@ def build_scope_report(
 
             if is_old_group(group_name):
                 old_groups.append(group_name)
-                scope_groupids.add(group_id)
-                bucket = old_bucket[group_name]
-                bucket["groupid"] = group_id
-                bucket["hostids"].add(str(host.get("hostid") or ""))
-                bucket["host_names"].add(host_name)
-                if org_value:
-                    bucket["org_values"].add(org_value)
-                if as_upper:
-                    bucket["as_values"].add(as_upper)
-                if env_raw_upper:
-                    bucket["env_raw_values"].add(env_raw_upper)
-                if env_value:
-                    bucket["env_scope_values"].add(env_value)
+                old_group_pairs.append((group_name, group_id))
                 continue
 
             parsed_standard = parse_standard_group(group_name)
             if parsed_standard:
                 standard_groups.append(group_name)
                 assigned_standard_lookup.add(group_name.lower())
-                scope_groupids.add(group_id)
-                bucket = standard_bucket[group_name]
-                bucket["groupid"] = group_id
-                bucket["group_kind"] = str(parsed_standard.get("group_kind") or "")
-                bucket["org"] = str(parsed_standard.get("org") or "")
-                bucket["hostids"].add(str(host.get("hostid") or ""))
-                bucket["host_names"].add(host_name)
-                if parsed_standard.get("as_value"):
-                    bucket["as_values"].add(str(parsed_standard["as_value"]))
-                if parsed_standard.get("env_raw"):
-                    bucket["env_raw_values"].add(str(parsed_standard["env_raw"]))
-                if env_value:
-                    bucket["env_scope_values"].add(env_value)
-                if parsed_standard.get("gas_value"):
-                    bucket["gas_values"].add(str(parsed_standard["gas_value"]))
-                if parsed_standard.get("os_family"):
-                    bucket["os_families"].add(str(parsed_standard["os_family"]))
+                standard_group_rows.append((group_name, group_id, parsed_standard))
                 group_kind = str(parsed_standard.get("group_kind") or "")
                 if group_kind.startswith("ENV"):
                     env_groups.append(group_name)
@@ -978,6 +1004,119 @@ def build_scope_report(
                 continue
 
             other_groups.append(group_name)
+
+        host_domain_org, host_domain_reasons = resolve_org_by_domain_values([str(host.get("host") or ""), str(host.get("name") or "")])
+        old_group_orgs = sorted({old_group_org(name) for name in old_groups if old_group_org(name)})
+        proxy_id = str(host.get("proxyid") or "").strip()
+        proxy = proxies_by_id.get(proxy_id, {})
+        proxy_values = _proxy_identity_values(proxy)
+        proxy_domain_org, proxy_domain_reasons = resolve_org_by_domain_values(proxy_values)
+
+        legacy_env_mismatches: List[str] = []
+        for old_group_name in old_groups:
+            legacy_env_token = extract_legacy_env_token(old_group_name)
+            if not legacy_env_token:
+                continue
+            if not env_raw_upper:
+                legacy_env_mismatches.append(f"{old_group_name}: old={legacy_env_token}, tag=(empty)")
+                continue
+            if legacy_env_token != env_raw_upper:
+                legacy_env_mismatches.append(f"{old_group_name}: old={legacy_env_token}, tag={env_raw_upper}")
+
+        host_domain_old_mismatch = bool(
+            host_domain_org and old_group_orgs and any(item != host_domain_org for item in old_group_orgs)
+        )
+        host_proxy_mismatch = bool(host_domain_org and proxy_domain_org and host_domain_org != proxy_domain_org)
+        host_manual_blocked = False
+
+        if host_domain_old_mismatch:
+            mismatch_host_oldorg_rows.append(
+                {
+                    "hostid": str(host.get("hostid") or ""),
+                    "host": str(host.get("host") or ""),
+                    "name": str(host.get("name") or ""),
+                    "status": str(host.get("status") or ""),
+                    "status_label": _host_status_label(host.get("status")),
+                    "host_domain_org": host_domain_org,
+                    "old_group_orgs": join_sorted(old_group_orgs),
+                    "old_groups": join_sorted(old_groups),
+                    "details": "",
+                }
+            )
+            host_manual_blocked = True
+
+        if host_proxy_mismatch:
+            mismatch_host_proxyorg_rows.append(
+                {
+                    "hostid": str(host.get("hostid") or ""),
+                    "host": str(host.get("host") or ""),
+                    "name": str(host.get("name") or ""),
+                    "status": str(host.get("status") or ""),
+                    "status_label": _host_status_label(host.get("status")),
+                    "host_domain_org": host_domain_org,
+                    "proxyid": proxy_id,
+                    "proxy_name": str(proxy.get("name") or proxy.get("host") or ""),
+                    "proxy_address": str(proxy.get("address") or ""),
+                    "proxy_domain_org": proxy_domain_org,
+                    "details": "; ".join(host_domain_reasons + proxy_domain_reasons),
+                }
+            )
+            host_manual_blocked = True
+
+        if legacy_env_mismatches:
+            mismatch_legacy_env_rows.append(
+                {
+                    "hostid": str(host.get("hostid") or ""),
+                    "host": str(host.get("host") or ""),
+                    "name": str(host.get("name") or ""),
+                    "status": str(host.get("status") or ""),
+                    "status_label": _host_status_label(host.get("status")),
+                    "tag_env": env_raw_upper,
+                    "old_groups": join_sorted(old_groups),
+                    "mismatches": "; ".join(legacy_env_mismatches),
+                }
+            )
+            host_manual_blocked = True
+
+        if host_manual_blocked:
+            continue
+
+        for group_name, group_id in old_group_pairs:
+            scope_groupids.add(group_id)
+            bucket = old_bucket[group_name]
+            bucket["groupid"] = group_id
+            bucket["hostids"].add(str(host.get("hostid") or ""))
+            bucket["host_names"].add(host_name)
+            legacy_env_token = extract_legacy_env_token(group_name)
+            if legacy_env_token:
+                bucket["legacy_env_tokens"].add(legacy_env_token)
+            if org_value:
+                bucket["org_values"].add(org_value)
+            if as_upper:
+                bucket["as_values"].add(as_upper)
+            if env_raw_upper:
+                bucket["env_raw_values"].add(env_raw_upper)
+            if env_value:
+                bucket["env_scope_values"].add(env_value)
+
+        for group_name, group_id, parsed_standard in standard_group_rows:
+            scope_groupids.add(group_id)
+            bucket = standard_bucket[group_name]
+            bucket["groupid"] = group_id
+            bucket["group_kind"] = str(parsed_standard.get("group_kind") or "")
+            bucket["org"] = str(parsed_standard.get("org") or "")
+            bucket["hostids"].add(str(host.get("hostid") or ""))
+            bucket["host_names"].add(host_name)
+            if parsed_standard.get("as_value"):
+                bucket["as_values"].add(str(parsed_standard["as_value"]))
+            if parsed_standard.get("env_raw"):
+                bucket["env_raw_values"].add(str(parsed_standard["env_raw"]))
+            if env_value:
+                bucket["env_scope_values"].add(env_value)
+            if parsed_standard.get("gas_value"):
+                bucket["gas_values"].add(str(parsed_standard["gas_value"]))
+            if parsed_standard.get("os_family"):
+                bucket["os_families"].add(str(parsed_standard["os_family"]))
 
         expected_groups = build_expected_hostgroups(
             org_value,
@@ -1385,6 +1524,16 @@ def build_scope_report(
         "scope_env": scope_env_value,
         "env_policy": f"{config.ENV_PROD_LABEL} => {config.ENV_PROD_LABEL}; everything else => {config.ENV_NONPROD_LABEL}",
         "hosts_in_scope": len(scope_hosts),
+        "hosts_excluded_manual": len(
+            {
+                str(row.get("hostid") or "")
+                for row in mismatch_host_oldorg_rows + mismatch_host_proxyorg_rows + mismatch_legacy_env_rows
+                if str(row.get("hostid") or "").strip()
+            }
+        ),
+        "hosts_mismatch_oldorg": len(mismatch_host_oldorg_rows),
+        "hosts_mismatch_proxyorg": len(mismatch_host_proxyorg_rows),
+        "hosts_mismatch_legacy_env": len(mismatch_legacy_env_rows),
         "hosts_old_scope": len(scope_hosts_replace),
         "hosts_no_any_new": len(scope_hosts_no_any_new),
         "hosts_need_enrichment": len(hosts_needing_enrichment),
@@ -1417,6 +1566,9 @@ def build_scope_report(
         "hosts_need_enrichment": _sort_host_rows(hosts_needing_enrichment),
         "hosts_clean": _sort_host_rows(scope_hosts_clean),
         "hosts_skipped_env": _sort_host_rows(scope_hosts_skipped_env),
+        "mismatch_host_oldorg": _sort_host_rows(mismatch_host_oldorg_rows),
+        "mismatch_host_proxyorg": _sort_host_rows(mismatch_host_proxyorg_rows),
+        "mismatch_legacy_env": _sort_host_rows(mismatch_legacy_env_rows),
         "host_expected_groups": sorted(
             host_expected_groups,
             key=lambda row: (
@@ -1442,6 +1594,13 @@ def build_scope_report(
             "scope_as": scope_as_values,
             "scope_env": scope_env_value,
             "hostids": sorted(row["hostid"] for row in scope_hosts if row.get("hostid")),
+            "excluded_hostids_manual": sorted(
+                {
+                    str(row.get("hostid") or "")
+                    for row in mismatch_host_oldorg_rows + mismatch_host_proxyorg_rows + mismatch_legacy_env_rows
+                    if str(row.get("hostid") or "").strip()
+                }
+            ),
             "hostgroups": sorted(inventory_hostgroups, key=lambda item: (item["kind"], item["name"].lower())),
             "grafana_old_groups": grafana_old_groups_dedup,
             "actionids": sorted(row["actionid"] for row in action_rows if row.get("actionid")),

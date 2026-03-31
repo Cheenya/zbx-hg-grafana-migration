@@ -34,6 +34,43 @@ HOST_HEADERS = [
     "other_groups",
 ]
 
+MISMATCH_OLDORG_HEADERS = [
+    "hostid",
+    "host",
+    "name",
+    "status",
+    "status_label",
+    "host_domain_org",
+    "old_group_orgs",
+    "old_groups",
+    "details",
+]
+
+MISMATCH_PROXY_HEADERS = [
+    "hostid",
+    "host",
+    "name",
+    "status",
+    "status_label",
+    "host_domain_org",
+    "proxyid",
+    "proxy_name",
+    "proxy_address",
+    "proxy_domain_org",
+    "details",
+]
+
+MISMATCH_LEGACY_ENV_HEADERS = [
+    "hostid",
+    "host",
+    "name",
+    "status",
+    "status_label",
+    "tag_env",
+    "old_groups",
+    "mismatches",
+]
+
 UNKNOWN_HOST_HEADERS = [
     "hostid",
     "host",
@@ -209,6 +246,14 @@ def _append_rows(ws, rows: Sequence[Dict[str, Any]], headers: Sequence[str]) -> 
     autosize_columns(ws)
 
 
+def _append_titled_table(ws, title: str, rows: Sequence[Dict[str, Any]], headers: Sequence[str]) -> None:
+    ws.append([title])
+    ws.append(list(headers))
+    for row in rows:
+        ws.append([row.get(header, "") for header in headers])
+    ws.append([])
+
+
 def _apply_hyperlinks(ws, rows: Sequence[Dict[str, Any]], headers: Sequence[str], link_map: Mapping[str, str]) -> None:
     index_by_header = {header: position + 1 for position, header in enumerate(headers)}
     for row_index, row in enumerate(rows, start=2):
@@ -240,6 +285,9 @@ def save_inventory_json(report: Dict[str, Any], path: str) -> None:
         "hosts_need_enrichment": report["hosts_need_enrichment"],
         "hosts_clean": report["hosts_clean"],
         "hosts_skipped_env": report["hosts_skipped_env"],
+        "mismatch_host_oldorg": report["mismatch_host_oldorg"],
+        "mismatch_host_proxyorg": report["mismatch_host_proxyorg"],
+        "mismatch_legacy_env": report["mismatch_legacy_env"],
         "host_expected_groups": report["host_expected_groups"],
         "env_summary": report["env_summary"],
         "gas_summary": report["gas_summary"],
@@ -382,11 +430,32 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
     skipped_ws = wb.create_sheet("HOSTS_SKIPPED_ENV")
     _append_rows(skipped_ws, report["hosts_skipped_env"], SKIPPED_HOST_HEADERS)
 
+    mismatch_ws = wb.create_sheet("MISMATCHES")
+    _append_titled_table(
+        mismatch_ws,
+        "HOST DOMAIN ORG != OLD GROUP ORG",
+        report["mismatch_host_oldorg"],
+        MISMATCH_OLDORG_HEADERS,
+    )
+    _append_titled_table(
+        mismatch_ws,
+        "HOST DOMAIN ORG != PROXY ORG",
+        report["mismatch_host_proxyorg"],
+        MISMATCH_PROXY_HEADERS,
+    )
+    _append_titled_table(
+        mismatch_ws,
+        "OLD GROUP ENV != TAG ENV",
+        report["mismatch_legacy_env"],
+        MISMATCH_LEGACY_ENV_HEADERS,
+    )
+    autosize_columns(mismatch_ws)
+
     old_ws = wb.create_sheet("GROUPS_OLD")
     _append_rows(
         old_ws,
         report["groups_old"],
-        ["group_name", "groupid", "org_values", "as_values", "env_raw_values", "env_scope_values", "hosts_count", "sample_hosts"],
+        ["group_name", "groupid", "legacy_env_tokens", "org_values", "as_values", "env_raw_values", "env_scope_values", "hosts_count", "sample_hosts"],
     )
 
     new_ws = wb.create_sheet("GROUPS_NEW")
@@ -465,19 +534,16 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
             "ORG",
             "old_group",
             "old_groupid",
+            "legacy_env_token",
             "new_group",
             "new_groupid",
             "target_kind",
             "target_exists",
             "candidate_rank",
             "candidate_count",
-            "intersection",
             "old_hosts_count",
             "target_scope_hosts",
             "new_hosts_count",
-            "old_coverage",
-            "new_coverage",
-            "jaccard",
             "host_action",
             "hosts_need_add_new",
             "hosts_already_have_new",
@@ -486,7 +552,6 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
             "old_env_scopes",
             "target_env_raw",
             "auto_reason",
-            "top1_new_conflict",
             "manual_required",
             "status",
             "comment",

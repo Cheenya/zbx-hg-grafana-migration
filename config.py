@@ -79,6 +79,16 @@ EXCLUDE_UNKNOWN_FROM_STATS: bool = True
 ENV_PROD_LABEL: str = "PROD"
 ENV_NONPROD_LABEL: str = "NONPROD"
 PROD_ENV_VALUES: tuple[str, ...] = ("PROD",)
+LEGACY_ENV_TOKENS: tuple[str, ...] = (
+    "PROD",
+    "NONPROD",
+    "DEV",
+    "TEST",
+    "STAGE",
+    "UAT",
+    "QA",
+    "PREPROD",
+)
 
 # Пороги mapping.
 MAPPING_MIN_INTERSECTION: int = 2

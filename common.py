@@ -154,7 +154,7 @@ def standard_group_org(name: str) -> str:
     return str(parsed.get("org") or "") if parsed else ""
 
 
-def resolve_host_org(host_values: Sequence[str], group_names: Sequence[str]) -> Tuple[str, List[str]]:
+def resolve_org_by_domain_values(host_values: Sequence[str]) -> Tuple[str, List[str]]:
     domain_matches: Set[str] = set()
     for raw_value in host_values:
         text = str(raw_value or "").strip().lower()
@@ -173,6 +173,15 @@ def resolve_host_org(host_values: Sequence[str], group_names: Sequence[str]) -> 
         return next(iter(domain_matches)), []
     if len(domain_matches) > 1:
         return "", [f"ORG unresolved: multiple domain matches ({join_sorted(domain_matches)})"]
+    return "", []
+
+
+def resolve_host_org(host_values: Sequence[str], group_names: Sequence[str]) -> Tuple[str, List[str]]:
+    domain_org, domain_reasons = resolve_org_by_domain_values(host_values)
+    if domain_org:
+        return domain_org, domain_reasons
+    if domain_reasons:
+        return "", domain_reasons
 
     candidates: Set[str] = set()
     for group_name in group_names:
@@ -203,6 +212,17 @@ def resolve_os_family(guest_name: Optional[str]) -> str:
         return "WINDOWS"
     if "linux" in text:
         return "LINUX"
+    return ""
+
+
+def extract_legacy_env_token(group_name: str) -> str:
+    allowed = {normalize_upper_tag_value(item) for item in getattr(config, "LEGACY_ENV_TOKENS", ()) if normalize_upper_tag_value(item)}
+    if not allowed:
+        return ""
+    tokens = [normalize_upper_tag_value(part) for part in str(group_name or "").split("-")]
+    for token in reversed(tokens):
+        if token in allowed:
+            return token
     return ""
 
 

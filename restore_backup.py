@@ -5,7 +5,7 @@ from typing import Any, Dict, Set
 import config
 from api_clients import ZabbixAPI
 from backup_io import load_backup
-from common import resolve_input_artifact
+from common import normalize_scope_env, normalize_values, resolve_input_artifact
 
 
 def _filter_keys(data: Dict[str, Any], allowed: Set[str]) -> Dict[str, Any]:
@@ -14,6 +14,23 @@ def _filter_keys(data: Dict[str, Any], allowed: Set[str]) -> Dict[str, Any]:
 
 def restore_backup(api: ZabbixAPI, backup_path: str) -> None:
     data = load_backup(backup_path)
+    current_scope_as = normalize_values(config.SCOPE_AS)
+    current_scope_env = normalize_scope_env(config.SCOPE_ENV)
+
+    if str(data.meta.zabbix_url or "").strip() and str(data.meta.zabbix_url).strip() != str(getattr(api, "api_url", "")).strip():
+        raise RuntimeError(
+            f"Backup Zabbix URL mismatch: backup={data.meta.zabbix_url} current={getattr(api, 'api_url', '')}"
+        )
+    if current_scope_as and sorted(str(item).strip().lower() for item in data.meta.scope_as) != sorted(
+        str(item).strip().lower() for item in current_scope_as
+    ):
+        raise RuntimeError(
+            f"Backup scope_as mismatch: backup={data.meta.scope_as} current={current_scope_as}"
+        )
+    if str(data.meta.scope_env or "").strip() != str(current_scope_env or "").strip():
+        raise RuntimeError(
+            f"Backup scope_env mismatch: backup={data.meta.scope_env} current={current_scope_env}"
+        )
 
     action_allowed = {
         "name",
