@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from time import time
 from typing import Any, Callable, Dict, List, Sequence, Set, Tuple
 
 import config
@@ -121,6 +122,19 @@ def _user_display(user: Dict[str, Any]) -> str:
     if full_name:
         return full_name
     return f"userid={user.get('userid')}"
+
+
+def _maintenance_is_expired(maintenance: Dict[str, Any]) -> bool:
+    active_till = str(maintenance.get("active_till") or "").strip()
+    if not active_till:
+        return False
+    try:
+        active_till_ts = int(active_till)
+    except (TypeError, ValueError):
+        return False
+    if active_till_ts <= 0:
+        return False
+    return active_till_ts < int(time())
 
 
 
@@ -1533,7 +1547,11 @@ def build_scope_report(
     scoped_user_ids.update(recipient_user_ids)
 
     maintenance_rows: List[Dict[str, Any]] = []
+    expired_maintenances_skipped = 0
     for maintenance in maintenances:
+        if _maintenance_is_expired(maintenance):
+            expired_maintenances_skipped += 1
+            continue
         maintenance_groupids = {
             str(group.get("groupid") or "")
             for group in maintenance.get("groups") or []
@@ -1583,7 +1601,7 @@ def build_scope_report(
                 "active_till": str(maintenance.get("active_till") or ""),
             }
         )
-    _log(log, f"zabbix: matched maintenances={len(maintenance_rows)}")
+    _log(log, f"zabbix: matched maintenances={len(maintenance_rows)} expired_skipped={expired_maintenances_skipped}")
 
     preview_seen: Set[Tuple[str, ...]] = set()
     preview_rows_sorted: List[Dict[str, Any]] = []
@@ -1689,6 +1707,7 @@ def build_scope_report(
         "actions": len(action_rows),
         "usergroups": len(usergroup_rows),
         "maintenances": len(maintenance_rows),
+        "maintenances_expired_skipped": expired_maintenances_skipped,
     }
     _log(log, f"zabbix: summary={summary}")
 
