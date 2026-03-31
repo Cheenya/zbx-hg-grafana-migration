@@ -187,6 +187,22 @@ def _extract_action_recipients(action: Dict[str, Any]) -> Tuple[Set[str], Set[st
     return usergroup_ids, user_ids
 
 
+def _mapping_requires_manual_object_review(mapping: Dict[str, str]) -> tuple[bool, str]:
+    if str(mapping.get("manual_required") or "").strip().lower() == "yes":
+        return True, "mapping row already marked manual"
+
+    target_kind = str(mapping.get("target_kind") or "").strip().upper()
+    old_env_scopes = {
+        item.strip().upper()
+        for item in str(mapping.get("old_env_scopes") or "").split(",")
+        if item.strip()
+    }
+    if target_kind == "AS" and old_env_scopes:
+        return True, "env-scoped old group cannot be auto-replaced with base AS"
+
+    return False, ""
+
+
 def build_impact_plan(
     api: ZabbixAPI,
     audit_report: Dict[str, Any],
@@ -230,19 +246,20 @@ def build_impact_plan(
             mapping = mappings_by_oldid.get(group_id)
             if not mapping:
                 continue
+            manual_required, manual_details = _mapping_requires_manual_object_review(mapping)
             zabbix_changes.append(
                 {
                     "object_type": "action",
                     "object_id": action_id,
                     "object_name": action_name,
                     "field_path": f"filter.conditions[{index}].value",
-                    "change_kind": "replace_groupid",
+                    "change_kind": "manual_review_reference" if manual_required else "replace_groupid",
                     "old_group": mapping["old_group"],
                     "old_groupid": mapping["old_groupid"],
                     "new_group": mapping["new_group"],
                     "new_groupid": mapping["new_groupid"],
-                    "manual_required": "",
-                    "details": "condition hostgroup",
+                    "manual_required": "yes" if manual_required else "",
+                    "details": manual_details or "condition hostgroup",
                 }
             )
             action_changed = True
@@ -254,19 +271,20 @@ def build_impact_plan(
             mapping = mappings_by_oldid.get(group_id)
             if not mapping:
                 continue
+            manual_required, manual_details = _mapping_requires_manual_object_review(mapping)
             zabbix_changes.append(
                 {
                     "object_type": "action",
                     "object_id": action_id,
                     "object_name": action_name,
                     "field_path": field_path,
-                    "change_kind": "replace_groupid",
+                    "change_kind": "manual_review_reference" if manual_required else "replace_groupid",
                     "old_group": mapping["old_group"],
                     "old_groupid": mapping["old_groupid"],
                     "new_group": mapping["new_group"],
                     "new_groupid": mapping["new_groupid"],
-                    "manual_required": "",
-                    "details": "operation group reference",
+                    "manual_required": "yes" if manual_required else "",
+                    "details": manual_details or "operation group reference",
                 }
             )
             action_changed = True
@@ -314,19 +332,20 @@ def build_impact_plan(
             mapping = mappings_by_oldid.get(group_id)
             if not mapping:
                 continue
+            manual_required, manual_details = _mapping_requires_manual_object_review(mapping)
             zabbix_changes.append(
                 {
                     "object_type": "maintenance",
                     "object_id": maintenance_id,
                     "object_name": maintenance_name,
                     "field_path": f"groups[{index}].groupid",
-                    "change_kind": "replace_groupid",
+                    "change_kind": "manual_review_reference" if manual_required else "replace_groupid",
                     "old_group": mapping["old_group"],
                     "old_groupid": mapping["old_groupid"],
                     "new_group": mapping["new_group"],
                     "new_groupid": mapping["new_groupid"],
-                    "manual_required": "",
-                    "details": "maintenance group reference",
+                    "manual_required": "yes" if manual_required else "",
+                    "details": manual_details or "maintenance group reference",
                 }
             )
             changed = True

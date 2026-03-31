@@ -104,6 +104,14 @@ def get_selected_mappings(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, str]
                 "old_groupid": old_groupid,
                 "new_group": new_group,
                 "new_groupid": new_groupid,
+                "old_group_kind": str(row.get("old_group_kind") or "").strip(),
+                "target_kind": str(row.get("target_kind") or "").strip(),
+                "manual_required": str(row.get("manual_required") or "").strip(),
+                "status": str(row.get("status") or "").strip(),
+                "candidate_count": str(row.get("candidate_count") or "").strip(),
+                "old_envs": str(row.get("old_envs") or "").strip(),
+                "old_env_scopes": str(row.get("old_env_scopes") or "").strip(),
+                "target_env_raw": str(row.get("target_env_raw") or "").strip(),
             }
         )
 
