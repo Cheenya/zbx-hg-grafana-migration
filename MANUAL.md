@@ -106,7 +106,13 @@ GRAFANA_AUDIT_ORGIDS = (17, 23)
 ```python
 SCOPE_AS: tuple[str, ...] = ()
 SCOPE_ENV: str = ""
+ORG_CODE: str = ""
 ```
+
+`ORG_CODE`:
+- если контур заведомо `BNK` или `DOM`, лучше задать явно;
+- тогда аудит берёт `ORG` из конфига;
+- если значение пустое, `ORG` выводится по реальным `BNK-*` / `DOM-*` и `BNK/...` / `DOM/...` группам хоста.
 
 - `SCOPE_AS` обязателен;
 - `SCOPE_ENV` опционален.

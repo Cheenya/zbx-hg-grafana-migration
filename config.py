@@ -17,6 +17,7 @@ GRAFANA_PASSWORD = ""
 # Scope для Zabbix / обычного audit.
 SCOPE_AS: tuple[str, ...] = ()
 SCOPE_ENV: str = ""
+ORG_CODE: str = ""  # BNK или DOM для текущего контура; если пусто, ORG пытаемся вывести из групп хоста
 
 # Привязка Grafana org к SCOPE_AS в audit_scope.py.
 GRAFANA_ORGIDS: tuple[int, ...] = ()

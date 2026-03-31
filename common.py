@@ -155,6 +155,7 @@ def standard_group_org(name: str) -> str:
 
 
 def resolve_host_org(group_names: Sequence[str]) -> Tuple[str, List[str]]:
+    configured_org = normalize_upper_tag_value(getattr(config, "ORG_CODE", ""))
     candidates: Set[str] = set()
     for group_name in group_names:
         name = str(group_name or "").strip()
@@ -168,6 +169,11 @@ def resolve_host_org(group_names: Sequence[str]) -> Tuple[str, List[str]]:
         parsed = parse_standard_group(name)
         if parsed and parsed.get("org"):
             candidates.add(str(parsed["org"]))
+
+    if configured_org:
+        if not candidates or candidates == {configured_org}:
+            return configured_org, []
+        return configured_org, [f"ORG config/group mismatch (config={configured_org}, groups={join_sorted(candidates)})"]
 
     if len(candidates) == 1:
         return next(iter(candidates)), []
