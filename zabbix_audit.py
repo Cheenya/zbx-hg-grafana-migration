@@ -815,6 +815,42 @@ def _build_host_enrichment_rows(
     return rows
 
 
+def _object_candidate_state(
+    old_groupids: Set[str],
+    object_groupids: Set[str],
+    mapping_candidates: Dict[str, List[Dict[str, Any]]],
+) -> Dict[str, bool]:
+    has_pending_add = False
+    has_missing_target = False
+    has_manual_issue = False
+    has_no_candidate = False
+
+    for old_groupid in old_groupids:
+        candidates = mapping_candidates.get(old_groupid) or []
+        if not candidates:
+            has_no_candidate = True
+            has_manual_issue = True
+            continue
+        for candidate in candidates:
+            target_exists = str(candidate.get("target_exists") or "").strip().lower() == "yes"
+            manual_required = str(candidate.get("manual_required") or "").strip().lower() == "yes"
+            new_groupid = str(candidate.get("new_groupid") or "").strip()
+            if manual_required:
+                has_manual_issue = True
+            if not target_exists:
+                has_missing_target = True
+                continue
+            if new_groupid and new_groupid not in object_groupids:
+                has_pending_add = True
+
+    return {
+        "has_pending_add": has_pending_add,
+        "has_missing_target": has_missing_target,
+        "has_manual_issue": has_manual_issue,
+        "has_no_candidate": has_no_candidate,
+    }
+
+
 
 def _preview_rows_for_object(
     object_type: str,
@@ -1080,6 +1116,9 @@ def build_scope_report(
                 continue
 
             if is_old_group(group_name):
+                if _old_group_kind(group_name) != "ENV" and not _is_old_group_for_as(group_name, as_value):
+                    other_groups.append(group_name)
+                    continue
                 old_groups.append(group_name)
                 old_group_pairs.append((group_name, group_id))
                 continue
@@ -1383,6 +1422,9 @@ def build_scope_report(
             continue
 
         action_all_groupids = condition_ids.union(operation_ids)
+        action_state = _object_candidate_state(matched_old_ids, action_all_groupids, mapping_candidates)
+        if not any(action_state.values()):
+            continue
 
         if matched_condition_ids and matched_operation_ids:
             where_found = "both"
@@ -1560,6 +1602,9 @@ def build_scope_report(
         matched_ids = {group_id for group_id in maintenance_groupids if group_id in object_old_scope_groupids}
         if not matched_ids:
             continue
+        maintenance_state = _object_candidate_state(matched_ids, maintenance_groupids, mapping_candidates)
+        if not any(maintenance_state.values()):
+            continue
         for index, group in enumerate(maintenance.get("groups") or []):
             group_id = str(group.get("groupid") or "")
             if group_id not in object_old_scope_groupids:
@@ -1630,6 +1675,19 @@ def build_scope_report(
         if signature in preview_seen:
             continue
         preview_seen.add(signature)
+        candidate_new_groupid = str(row.get("candidate_new_groupid") or "").strip()
+        target_exists = str(row.get("target_exists") or "").strip().lower() == "yes"
+        object_has_candidate_new = str(row.get("object_has_candidate_new") or "").strip().lower() == "yes"
+        manual_required = str(row.get("manual_required") or "").strip().lower() == "yes"
+        mapping_status = str(row.get("mapping_status") or "").strip()
+        needs_preview = (
+            manual_required
+            or mapping_status == "no_candidate"
+            or not target_exists
+            or (bool(candidate_new_groupid) and not object_has_candidate_new)
+        )
+        if not needs_preview:
+            continue
         preview_rows_sorted.append(row)
 
     host_rows_sorted = _sort_host_rows(scope_hosts)
