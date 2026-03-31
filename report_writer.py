@@ -533,12 +533,14 @@ MAINTENANCE_VIEW_HEADERS = [
 SUMMARY_TITLE_FILL = PatternFill("solid", fgColor="1F4E78")
 SUMMARY_HEADER_FILL = PatternFill("solid", fgColor="D9E2F3")
 DEFAULT_HEADER_FILL = PatternFill("solid", fgColor="D9EAD3")
+CURRENT_FILL = PatternFill("solid", fgColor="EDEDED")
+INFO_FILL = PatternFill("solid", fgColor="DDEBF7")
+LINK_FILL = PatternFill("solid", fgColor="EAF2F8")
 ENV_FILL = PatternFill("solid", fgColor="FFF2CC")
 AS_FILL = PatternFill("solid", fgColor="D9E2F3")
 GAS_FILL = PatternFill("solid", fgColor="E2F0D9")
 OS_FILL = PatternFill("solid", fgColor="FCE4D6")
 ALERT_FILL = PatternFill("solid", fgColor="F4CCCC")
-MUTED_FILL = PatternFill("solid", fgColor="EDEDED")
 HEADER_FONT = Font(bold=True, color="000000")
 TITLE_FONT = Font(bold=True, color="FFFFFF")
 
@@ -589,19 +591,46 @@ def _style_title_row(ws, row_index: int) -> None:
 def _apply_kind_column_fills(ws, headers: Sequence[str]) -> None:
     header_index = {header: index + 1 for index, header in enumerate(headers)}
     fill_by_header = {
+        "current_groups": CURRENT_FILL,
+        "groups": CURRENT_FILL,
+        "old_groups": CURRENT_FILL,
+        "standard_groups": CURRENT_FILL,
+        "matched_group_names": CURRENT_FILL,
+        "rights_on_old_groups": CURRENT_FILL,
+        "rights_on_new_groups": CURRENT_FILL,
+        "source_text": CURRENT_FILL,
+        "planned_value": CURRENT_FILL,
+        "suggested_old_group": CURRENT_FILL,
         "add_env_groups": ENV_FILL,
         "expected_env_groups": ENV_FILL,
         "target_env_raw": ENV_FILL,
+        "ENV_RAW": ENV_FILL,
+        "ENV_SCOPE": ENV_FILL,
         "add_as_groups": AS_FILL,
         "expected_as_groups": AS_FILL,
+        "AS": AS_FILL,
         "add_gas_groups": GAS_FILL,
         "expected_gas_groups": GAS_FILL,
+        "GAS": GAS_FILL,
         "add_os_groups": OS_FILL,
         "expected_os_groups": OS_FILL,
+        "OS_FAMILY": OS_FILL,
         "missing_in_zabbix": ALERT_FILL,
         "manual_required": ALERT_FILL,
+        "reason": ALERT_FILL,
+        "unresolved_reasons": ALERT_FILL,
+        "suggestion_status": ALERT_FILL,
         "suggested_new_group": AS_FILL,
         "suggested_value": AS_FILL,
+        "include_reason": INFO_FILL,
+        "matching_tag_filters": INFO_FILL,
+        "field_paths": INFO_FILL,
+        "where_found": INFO_FILL,
+        "reference_kind": INFO_FILL,
+        "field_kind": INFO_FILL,
+        "json_path": INFO_FILL,
+        "dashboard_url": LINK_FILL,
+        "panel_url": LINK_FILL,
     }
     for header, fill in fill_by_header.items():
         column_index = header_index.get(header)
@@ -615,6 +644,8 @@ def _finalize_table_sheet(ws, headers: Sequence[str]) -> None:
     _style_header_row(ws, 1, headers)
     _apply_kind_column_fills(ws, headers)
     ws.freeze_panes = "A2"
+    if headers:
+        ws.auto_filter.ref = ws.dimensions
     autosize_columns(ws)
 
 
