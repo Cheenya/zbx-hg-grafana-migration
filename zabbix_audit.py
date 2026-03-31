@@ -1344,6 +1344,11 @@ def build_scope_report(
     mapping_plan_rows = _build_mapping_plan_rows(old_bucket, standard_bucket, expected_bucket, host_mapping_targets)
     mapping_candidates = _mapping_candidates_by_oldid(mapping_plan_rows)
     old_scope_groupids = {str(data["groupid"]) for data in old_bucket.values() if str(data.get("groupid") or "").strip()}
+    object_old_scope_groupids = {
+        str(data["groupid"])
+        for group_name, data in old_bucket.items()
+        if str(data.get("groupid") or "").strip() and _old_group_kind(group_name) != "ENV"
+    }
     old_name_to_groupid = {str(name): str(data.get("groupid") or "") for name, data in old_bucket.items()}
     zabbix_mapping_preview: List[Dict[str, Any]] = []
     _log(
@@ -1357,8 +1362,8 @@ def build_scope_report(
 
     for action in actions:
         condition_ids, operation_ids = extract_action_groupids(action)
-        matched_condition_ids = condition_ids.intersection(old_scope_groupids)
-        matched_operation_ids = operation_ids.intersection(old_scope_groupids)
+        matched_condition_ids = condition_ids.intersection(object_old_scope_groupids)
+        matched_operation_ids = operation_ids.intersection(object_old_scope_groupids)
         matched_old_ids = matched_condition_ids.union(matched_operation_ids)
         if not matched_old_ids:
             continue
@@ -1376,7 +1381,7 @@ def build_scope_report(
             if str(condition.get("conditiontype") or "") != "0":
                 continue
             group_id = str(condition.get("value") or "")
-            if group_id not in old_scope_groupids:
+            if group_id not in object_old_scope_groupids:
                 continue
             zabbix_mapping_preview.extend(
                 _preview_rows_for_object(
@@ -1397,7 +1402,7 @@ def build_scope_report(
         for key in ("operations", "recovery_operations", "update_operations"):
             _iter_groupid_paths(action.get(key), key, action_groupid_hits)
         for field_path, group_id in action_groupid_hits:
-            if group_id not in old_scope_groupids:
+            if group_id not in object_old_scope_groupids:
                 continue
             zabbix_mapping_preview.extend(
                 _preview_rows_for_object(
@@ -1470,7 +1475,7 @@ def build_scope_report(
         touched_new_rights: List[str] = []
         for index, right in enumerate(rights):
             group_id = str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")
-            if group_id in old_scope_groupids:
+            if group_id in object_old_scope_groupids:
                 touched_old_rights.append(f"{groupid_to_name.get(group_id, group_id)}:{right.get('permission')}")
                 zabbix_mapping_preview.extend(
                     _preview_rows_for_object(
@@ -1550,12 +1555,12 @@ def build_scope_report(
             for group in maintenance.get("groups") or []
             if str(group.get("groupid") or "").strip()
         }
-        matched_ids = {group_id for group_id in maintenance_groupids if group_id in old_scope_groupids}
+        matched_ids = {group_id for group_id in maintenance_groupids if group_id in object_old_scope_groupids}
         if not matched_ids:
             continue
         for index, group in enumerate(maintenance.get("groups") or []):
             group_id = str(group.get("groupid") or "")
-            if group_id not in old_scope_groupids:
+            if group_id not in object_old_scope_groupids:
                 continue
             zabbix_mapping_preview.extend(
                 _preview_rows_for_object(
@@ -1640,6 +1645,8 @@ def build_scope_report(
     grafana_old_groups_dedup: List[Dict[str, str]] = []
     grafana_old_seen: Set[Tuple[str, str]] = set()
     for group_name, data in sorted(old_bucket.items(), key=lambda item: item[0].lower()):
+        if _old_group_kind(group_name) == "ENV":
+            continue
         group_id = str(data.get("groupid") or "")
         for as_value in sorted({str(item).strip() for item in data.get("as_values") or set() if str(item).strip()}, key=str.lower):
             signature = (as_value, group_id)
