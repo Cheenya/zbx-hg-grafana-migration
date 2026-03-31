@@ -42,6 +42,7 @@
 
 Что делает `grafana_org_audit.py`:
 - берёт `GRAFANA_AUDIT_ORGIDS` из `config.py`;
+- берёт только datasource с `type = alexanderzobnin-zabbix-datasource` (или из `GRAFANA_ZABBIX_DATASOURCE_TYPES`);
 - в каждой org находит все Zabbix datasources;
 - обходит все dashboards в этой org;
 - показывает всё, что завязано на Zabbix datasource:

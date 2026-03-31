@@ -40,6 +40,7 @@ SAVE_JSON_INVENTORY: bool = True
 
 # Grafana apply.
 GRAFANA_APPLY_CHANGES: bool = False
+GRAFANA_ZABBIX_DATASOURCE_TYPES: tuple[str, ...] = ("alexanderzobnin-zabbix-datasource",)
 
 # Каталог и имена артефактов.
 OUTPUT_DIR: str = "v2_output"

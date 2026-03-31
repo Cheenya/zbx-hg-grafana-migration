@@ -242,7 +242,6 @@ def save_inventory_json(report: Dict[str, Any], path: str) -> None:
         "host_enrichment": report["host_enrichment"],
         "hosts_need_enrichment": report["hosts_need_enrichment"],
         "hosts_clean": report["hosts_clean"],
-        "hosts_disabled": report["hosts_disabled"],
         "hosts_skipped_env": report["hosts_skipped_env"],
         "host_expected_groups": report["host_expected_groups"],
         "env_summary": report["env_summary"],
@@ -386,9 +385,6 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
             "manual_required",
         ],
     )
-
-    disabled_ws = wb.create_sheet("HOSTS_DISABLED")
-    _append_rows(disabled_ws, report["hosts_disabled"], HOST_HEADERS)
 
     clean_ws = wb.create_sheet("HOSTS_CLEAN")
     _append_rows(clean_ws, report["hosts_clean"], HOST_HEADERS)

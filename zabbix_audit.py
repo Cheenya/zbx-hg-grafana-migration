@@ -814,7 +814,6 @@ def build_scope_report(
     scope_hosts: List[Dict[str, Any]] = []
     scope_hosts_replace: List[Dict[str, Any]] = []
     scope_hosts_clean: List[Dict[str, Any]] = []
-    scope_hosts_disabled: List[Dict[str, Any]] = []
     scope_hosts_no_any_new: List[Dict[str, Any]] = []
     scope_hosts_skipped_env: List[Dict[str, Any]] = []
     scope_groupids: Set[str] = set()
@@ -1095,8 +1094,6 @@ def build_scope_report(
             scope_hosts_replace.append(dict(host_row))
         else:
             scope_hosts_clean.append(dict(host_row))
-        if is_disabled:
-            scope_hosts_disabled.append(dict(host_row))
         if missing_any_new_group:
             scope_hosts_no_any_new.append(dict(host_row))
 
@@ -1138,7 +1135,7 @@ def build_scope_report(
         log,
         "zabbix: host scan completed "
         f"scope_hosts={len(scope_hosts)} old_scope={len(scope_hosts_replace)} "
-        f"no_any_new={len(scope_hosts_no_any_new)} disabled={len(scope_hosts_disabled)} "
+        f"no_any_new={len(scope_hosts_no_any_new)} "
         f"skipped_env={len(scope_hosts_skipped_env)} unknown={len(unknown_rows)}",
     )
 
@@ -1419,7 +1416,6 @@ def build_scope_report(
         "hosts_need_enrichment": len(hosts_needing_enrichment),
         "hosts_enrichment": len(host_enrichment_rows),
         "hosts_clean": len(scope_hosts_clean),
-        "hosts_disabled": len(scope_hosts_disabled),
         "hosts_skipped_env": len(scope_hosts_skipped_env),
         "unknown_hosts": len(unknown_rows),
         "env_values": len(env_summary_rows),
@@ -1447,7 +1443,6 @@ def build_scope_report(
         "host_enrichment": host_enrichment_rows,
         "hosts_need_enrichment": _sort_host_rows(hosts_needing_enrichment),
         "hosts_clean": _sort_host_rows(scope_hosts_clean),
-        "hosts_disabled": _sort_host_rows(scope_hosts_disabled),
         "hosts_skipped_env": _sort_host_rows(scope_hosts_skipped_env),
         "host_expected_groups": sorted(
             host_expected_groups,

@@ -500,11 +500,18 @@ def collect_grafana_report(
 
 
 def _is_zabbix_datasource_row(row: Dict[str, Any]) -> bool:
-    text = " ".join(
-        str(row.get(key) or "")
-        for key in ("name", "uid", "type", "typeName", "pluginId", "url")
-    ).lower()
-    return "zabbix" in text
+    allowed_types = {
+        str(item or "").strip().lower()
+        for item in getattr(config, "GRAFANA_ZABBIX_DATASOURCE_TYPES", ())
+        if str(item or "").strip()
+    }
+    ds_type = str(row.get("type") or "").strip().lower()
+    plugin_id = str(row.get("pluginId") or "").strip().lower()
+    if ds_type in allowed_types:
+        return True
+    if plugin_id in allowed_types:
+        return True
+    return False
 
 
 def _datasource_identity(row: Dict[str, Any]) -> Tuple[str, str, str]:

@@ -79,6 +79,7 @@ GRAFANA_PASSWORD = ""
 GRAFANA_ORGIDS = ()
 GRAFANA_AUDIT_ORGIDS = ()
 GRAFANA_APPLY_CHANGES = False
+GRAFANA_ZABBIX_DATASOURCE_TYPES = ("alexanderzobnin-zabbix-datasource",)
 ```
 
 Grafana сейчас работает по логину/паролю.
@@ -100,6 +101,11 @@ GRAFANA_AUDIT_ORGIDS = (17, 23)
 `GRAFANA_APPLY_CHANGES`:
 - `False` — `apply_grafana_plan.py` работает только как dry-run;
 - `True` — `apply_grafana_plan.py` реально вызывает `dashboard update`.
+
+`GRAFANA_ZABBIX_DATASOURCE_TYPES`:
+- список допустимых `type`/`pluginId` для Grafana datasource audit;
+- по умолчанию берётся только стандартный Zabbix datasource:
+  - `alexanderzobnin-zabbix-datasource`.
 
 ### 4.3. Scope
 
@@ -299,9 +305,6 @@ MAPPING_FORBID_ENV_MISMATCH = True
 `HOSTS_NEED_ENRICH`
 - подмножество `HOST_ENRICHMENT`, где есть что добавить на хост или где не хватает host-group в каталоге Zabbix.
 
-`HOSTS_DISABLED`
-- выключенные хосты в scope.
-
 `HOSTS_SKIPPED_ENV`
 - хосты выбранной AS, исключённые по `SCOPE_ENV`.
 
@@ -350,7 +353,7 @@ MAPPING_FORBID_ENV_MISMATCH = True
 Он:
 - не использует `SCOPE_AS`;
 - берёт `GRAFANA_AUDIT_ORGIDS` напрямую из `config.py`;
-- в каждой выбранной org находит все Zabbix datasources;
+- в каждой выбранной org берёт только datasource с типом из `GRAFANA_ZABBIX_DATASOURCE_TYPES`;
 - скачивает все dashboards этой org;
 - показывает всё, что завязано на Zabbix datasource:
   - сами datasources;
