@@ -85,7 +85,7 @@ def _common_prefix_tokens(groups: Sequence[str]) -> List[str]:
 def _build_pattern_keys(scope_old_groups: Sequence[Dict[str, str]]) -> Dict[str, List[str]]:
     by_as: Dict[str, Set[str]] = defaultdict(set)
     for row in scope_old_groups:
-        as_value = str(row.get("AS") or "").strip()
+        as_value = str(row.get("AS") or "").strip().lower()
         group_name = str(row.get("name") or "").strip()
         if as_value and group_name:
             by_as[as_value].add(group_name)
@@ -336,7 +336,7 @@ def collect_grafana_report(
     exact_old: Dict[str, Set[str]] = defaultdict(set)
     for row in scope_old_groups:
         name = str(row.get("name") or "").strip()
-        as_value = str(row.get("AS") or "").strip()
+        as_value = str(row.get("AS") or "").strip().lower()
         if name and as_value:
             exact_old[name].add(as_value)
     pattern_keys_by_as = _build_pattern_keys(scope_old_groups)
@@ -348,10 +348,11 @@ def collect_grafana_report(
     seen_dashboards: Set[Tuple[str, int, str]] = set()
 
     for as_value, org_id in scope_pairs:
+        as_key = str(as_value or "").strip().lower()
         org_id_int = int(org_id or 0)
-        exact_old_count = sum(1 for values in exact_old.values() if as_value in values)
-        old_group_sample = sorted(name for name, values in exact_old.items() if as_value in values)[:10]
-        pattern_keys = pattern_keys_by_as.get(as_value) or []
+        exact_old_count = sum(1 for values in exact_old.values() if as_key in values)
+        old_group_sample = sorted(name for name, values in exact_old.items() if as_key in values)[:10]
+        pattern_keys = pattern_keys_by_as.get(as_key) or []
         _log(
             log,
             f"grafana: start as={as_value} org_id={org_id_int} old_groups={exact_old_count} "
@@ -399,7 +400,7 @@ def collect_grafana_report(
 
                 for match in OLD_RX.finditer(text):
                     candidate = match.group(0).strip()
-                    if as_value not in exact_old.get(candidate, set()):
+                    if as_key not in exact_old.get(candidate, set()):
                         continue
                     _add_detail_row(
                         counts,
