@@ -31,6 +31,13 @@ GROUP_FIELD_MARKERS = (
     ".options[",
 )
 
+HOST_FILTER_MARKERS = (
+    ".host.filter",
+    ".hosts.filter",
+    ".host_filter",
+    ".hosts_filter",
+)
+
 
 def _log(log: Callable[[str], None] | None, message: str) -> None:
     if log is not None:
@@ -160,6 +167,8 @@ def _is_pattern_candidate(text: str, location_kind: str, field_kind: str) -> boo
 def _is_group_relevant_context(json_path: str, location_kind: str, field_kind: str, variable_name: str = "") -> bool:
     lower_path = str(json_path or "").lower()
     lower_name = str(variable_name or "").lower()
+    if any(marker in lower_path for marker in HOST_FILTER_MARKERS):
+        return False
     if field_kind in {"query", "definition", "regex"}:
         return True
     if location_kind == "variable":
@@ -904,6 +913,8 @@ def _is_relevant_org_text(text: str, json_path: str, field_kind: str, variable_n
     lower_text = str(text or "").lower()
     lower_path = str(json_path or "").lower()
     if not lower_text.strip():
+        return False
+    if any(marker in lower_path for marker in HOST_FILTER_MARKERS):
         return False
     location_kind = "variable" if ".templating.list[" in lower_path else ("panel" if ".panels[" in lower_path else "dashboard")
     if not _is_group_relevant_context(json_path, location_kind, field_kind, variable_name):
