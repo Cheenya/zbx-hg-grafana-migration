@@ -448,6 +448,7 @@ def _build_mapping_plan_rows(
         old_env_raws = sorted(str(item).strip() for item in old_data["env_raw_values"] if str(item).strip())
         old_env_scopes = sorted(str(item).strip() for item in old_data["env_scope_values"] if str(item).strip())
         legacy_env_token = extract_legacy_env_token(old_name)
+        legacy_env_scope = canonical_env_value(legacy_env_token) if legacy_env_token else ""
 
         candidate_state: Dict[str, Dict[str, Any]] = {}
         for hostid in old_hostids:
@@ -497,7 +498,7 @@ def _build_mapping_plan_rows(
                 "old_orgs": join_sorted(old_orgs),
                 "old_envs": join_sorted(old_env_raws),
                 "old_env_scopes": join_sorted(old_env_scopes),
-                "target_env_raw": legacy_env_token,
+                "target_env_raw": legacy_env_scope or legacy_env_token,
                 "auto_reason": auto_reason,
                 "manual_required": manual_required,
                 "status": status,
@@ -520,12 +521,13 @@ def _build_mapping_plan_rows(
         target_org = old_orgs[0]
         target_as = old_as_values[0]
         base_group_name = f"{target_org}/AS/{target_as}"
-        preferred_group_name = f"{base_group_name}/{legacy_env_token}" if legacy_env_token else base_group_name
-
-        ordered_target_names: List[str] = []
-        ordered_target_names.append(preferred_group_name)
-        if legacy_env_token and base_group_name != preferred_group_name:
-            ordered_target_names.append(base_group_name)
+        exact_env_values = [value for value in old_env_raws if value]
+        exact_env_value = exact_env_values[0] if len(exact_env_values) == 1 else ""
+        preferred_group_name = base_group_name
+        preferred_group_kind = "AS"
+        if legacy_env_scope and exact_env_value and canonical_env_value(exact_env_value) == legacy_env_scope:
+            preferred_group_name = f"{base_group_name}/{exact_env_value}"
+            preferred_group_kind = "AS_ENV"
 
         def build_candidate_row(target_name: str, target_kind: str, status: str, manual_required: str, auto_reason: str = "") -> Dict[str, Any]:
             state = candidate_state.get(target_name) or {
@@ -534,7 +536,7 @@ def _build_mapping_plan_rows(
                 "group_kind": target_kind,
                 "target_exists": False,
                 "org": target_org,
-                "target_env_raw": legacy_env_token if target_kind == "AS_ENV" else "",
+                "target_env_raw": exact_env_value if target_kind == "AS_ENV" else "",
                 "target_scope_hostids": old_hostids if target_kind == "AS" else set(),
             }
             target_scope_hostids = set(state.get("target_scope_hostids") or set())
@@ -574,37 +576,25 @@ def _build_mapping_plan_rows(
                 "comment": "",
             }
 
-        if legacy_env_token:
-            preferred_exists = bool((candidate_state.get(preferred_group_name) or {}).get("target_exists"))
-            rows.append(
-                build_candidate_row(
-                    preferred_group_name,
-                    "AS_ENV",
-                    "auto_selected" if preferred_exists else "missing_target_group",
-                    "" if preferred_exists else "yes",
-                    "legacy_env_to_as_env" if preferred_exists else "",
-                )
+        preferred_exists = bool((candidate_state.get(preferred_group_name) or {}).get("target_exists"))
+        rows.append(
+            build_candidate_row(
+                preferred_group_name,
+                preferred_group_kind,
+                "auto_selected" if preferred_exists else "missing_target_group",
+                "" if preferred_exists else "yes",
+                "tag_env_to_as_env" if preferred_group_kind == "AS_ENV" and preferred_exists else ("legacy_base_to_as" if preferred_exists else ""),
             )
-            if base_group_name != preferred_group_name:
-                base_exists = bool((candidate_state.get(base_group_name) or {}).get("target_exists"))
-                rows.append(
-                    build_candidate_row(
-                        base_group_name,
-                        "AS",
-                        "fallback_base_candidate" if base_exists else "missing_fallback_group",
-                        "yes",
-                        "",
-                    )
-                )
-        else:
+        )
+        if preferred_group_name != base_group_name:
             base_exists = bool((candidate_state.get(base_group_name) or {}).get("target_exists"))
             rows.append(
                 build_candidate_row(
                     base_group_name,
                     "AS",
-                    "auto_selected" if base_exists else "missing_target_group",
-                    "" if base_exists else "yes",
-                    "legacy_base_to_as" if base_exists else "",
+                    "fallback_base_candidate" if base_exists else "missing_fallback_group",
+                    "yes",
+                    "",
                 )
             )
 
@@ -1017,11 +1007,12 @@ def build_scope_report(
             legacy_env_token = extract_legacy_env_token(old_group_name)
             if not legacy_env_token:
                 continue
-            if not env_raw_upper:
-                legacy_env_mismatches.append(f"{old_group_name}: old={legacy_env_token}, tag=(empty)")
+            legacy_env_scope = canonical_env_value(legacy_env_token)
+            if not env_value:
+                legacy_env_mismatches.append(f"{old_group_name}: old={legacy_env_scope or legacy_env_token}, tag=(empty)")
                 continue
-            if legacy_env_token != env_raw_upper:
-                legacy_env_mismatches.append(f"{old_group_name}: old={legacy_env_token}, tag={env_raw_upper}")
+            if legacy_env_scope != env_value:
+                legacy_env_mismatches.append(f"{old_group_name}: old={legacy_env_scope or legacy_env_token}, tag={env_value}")
 
         host_domain_old_mismatch = bool(
             host_domain_org and old_group_orgs and any(item != host_domain_org for item in old_group_orgs)
