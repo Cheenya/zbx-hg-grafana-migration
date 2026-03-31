@@ -1477,20 +1477,6 @@ def build_scope_report(
             group_id = str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")
             if group_id in object_old_scope_groupids:
                 touched_old_rights.append(f"{groupid_to_name.get(group_id, group_id)}:{right.get('permission')}")
-                zabbix_mapping_preview.extend(
-                    _preview_rows_for_object(
-                        "usergroup",
-                        str(usergroup.get("usrgrpid") or ""),
-                        str(usergroup.get("name") or ""),
-                        "hostgroup_rights",
-                        f"hostgroup_rights[{index}].groupid",
-                        group_id,
-                        mapping_candidates,
-                        groupid_to_name,
-                        all_right_groupids,
-                        f"old usergroup right={groupid_to_name.get(group_id, group_id)}",
-                    )
-                )
                 continue
             if group_id in scope_groupids:
                 touched_new_rights.append(f"{groupid_to_name.get(group_id, group_id)}:{right.get('permission')}")
@@ -1511,8 +1497,6 @@ def build_scope_report(
 
         usergroup_id = str(usergroup.get("usrgrpid") or "")
         include_reasons: List[str] = []
-        if touched_old_rights:
-            include_reasons.append("old_hostgroup_rights")
         if matching_filters:
             include_reasons.append("matching_tag_filters")
         if usergroup_id in recipient_usergroup_ids:
