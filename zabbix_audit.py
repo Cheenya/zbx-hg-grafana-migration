@@ -178,6 +178,22 @@ def _group_matches_scope(group_name: str, scope_as_values: Sequence[str]) -> boo
     return False
 
 
+def _old_group_belongs_to_scope(
+    group_name: str,
+    scope_as_values: Sequence[str],
+    scope_as_lower: Set[str],
+    group_as_values: Set[str],
+) -> bool:
+    if _old_group_kind(group_name) == "ENV":
+        return True
+    if any(_is_old_group_for_as(group_name, as_value) for as_value in scope_as_values):
+        return True
+    normalized_as_values = {str(item or "").strip().lower() for item in group_as_values if str(item or "").strip()}
+    if normalized_as_values and normalized_as_values.issubset(scope_as_lower):
+        return True
+    return False
+
+
 
 def _host_status_label(status: Any) -> str:
     return "enabled" if str(status or "") == "0" else "disabled"
@@ -997,6 +1013,7 @@ def build_scope_report(
     mismatch_host_oldorg_rows: List[Dict[str, Any]] = []
     mismatch_host_proxyorg_rows: List[Dict[str, Any]] = []
     mismatch_legacy_env_rows: List[Dict[str, Any]] = []
+    old_group_global_as_values: Dict[str, Set[str]] = defaultdict(set)
     env_summary_bucket: Dict[Any, Dict[str, Any]] = defaultdict(
         lambda: {"hostids": set(), "host_names": set(), "replace_hostids": set(), "disabled_hostids": set()}
     )
@@ -1025,6 +1042,11 @@ def build_scope_report(
             if str(group.get("name") or "") and not is_excluded_group(str(group.get("name") or ""))
         ]
         group_names = [str(group.get("name") or "") for group in filtered_groups]
+
+        for group in filtered_groups:
+            group_name = str(group.get("name") or "")
+            if is_old_group(group_name) and as_value:
+                old_group_global_as_values[group_name].add(str(as_value).strip())
 
         if unknown_reasons:
             include_unknown = _unknown_in_scope(host, scope_as_values, scope_as_lower)
@@ -1116,7 +1138,12 @@ def build_scope_report(
                 continue
 
             if is_old_group(group_name):
-                if _old_group_kind(group_name) != "ENV" and not _is_old_group_for_as(group_name, as_value):
+                if not _old_group_belongs_to_scope(
+                    group_name,
+                    scope_as_values,
+                    scope_as_lower,
+                    old_group_global_as_values.get(group_name, set()),
+                ):
                     other_groups.append(group_name)
                     continue
                 old_groups.append(group_name)
