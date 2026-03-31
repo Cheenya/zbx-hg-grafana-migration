@@ -10,13 +10,14 @@
 - построить точный `impact_plan`;
 - собрать backup строго по change-scope;
 - проверить backup;
+- выполнить безопасное донасыщение host-groups на хостах;
 - уметь сделать restore.
 
 На текущем этапе контур:
-- ничего не меняет в Zabbix;
+- в Zabbix меняет только host enrichment через отдельный `apply_zabbix_plan.py`;
 - меняет Grafana только через отдельный `apply_grafana_plan.py`;
 - по умолчанию Grafana apply идёт как dry-run;
-- не выполняет саму Zabbix-миграцию.
+- по умолчанию Zabbix apply тоже идёт как dry-run.
 
 
 ## 2. Точки входа
@@ -29,6 +30,7 @@ python apply_grafana_plan.py
 python build_impact_plan.py
 python make_backup.py
 python verify_backup.py
+python apply_zabbix_plan.py
 python restore_backup.py
 ```
 
@@ -40,6 +42,7 @@ python restore_backup.py
 - `build_impact_plan.py` — build change-scope по выбранным mappings;
 - `make_backup.py` — backup по `impact_plan.json`;
 - `verify_backup.py` — сверка backup против `impact_plan.json`;
+- `apply_zabbix_plan.py` — dry-run/apply host enrichment в Zabbix;
 - `restore_backup.py` — откат Zabbix из backup.
 
 
@@ -101,6 +104,10 @@ GRAFANA_AUDIT_ORGIDS = (17, 23)
 `GRAFANA_APPLY_CHANGES`:
 - `False` — `apply_grafana_plan.py` работает только как dry-run;
 - `True` — `apply_grafana_plan.py` реально вызывает `dashboard update`.
+
+`ZABBIX_APPLY_CHANGES`:
+- `False` — `apply_zabbix_plan.py` работает только как dry-run;
+- `True` — `apply_zabbix_plan.py` реально вызывает `host.update` для донасыщения группами.
 
 `GRAFANA_ZABBIX_DATASOURCE_TYPES`:
 - список допустимых `type`/`pluginId` для Grafana datasource audit;
@@ -218,7 +225,7 @@ SOURCE_GRAFANA_PLAN_XLSX = ""
 - `SOURCE_GRAFANA_ORG_JSON` — вход для `build_grafana_plan.py`;
 - `SOURCE_MAPPING_PLAN_XLSX` — вход для `build_impact_plan.py`;
 - `SOURCE_IMPACT_PLAN_JSON` — вход для `make_backup.py` и `verify_backup.py`;
-- `SOURCE_BACKUP_FILE` — вход для `verify_backup.py` и `restore_backup.py`.
+- `SOURCE_BACKUP_FILE` — вход для `verify_backup.py`, `apply_zabbix_plan.py` и `restore_backup.py`.
 - `SOURCE_GRAFANA_PLAN_XLSX` — вход для `apply_grafana_plan.py`.
 
 Если любой `SOURCE_*` пустой, соответствующий скрипт по умолчанию берёт самый свежий файл из `OUTPUT_DIR`.
@@ -729,6 +736,28 @@ python verify_backup.py
 python restore_backup.py
 ```
 
+### Шаг 8. Zabbix host enrichment
+
+Сначала dry-run:
+
+```python
+ZABBIX_APPLY_CHANGES = False
+```
+
+```bash
+python apply_zabbix_plan.py
+```
+
+Потом реальное применение:
+
+```python
+ZABBIX_APPLY_CHANGES = True
+```
+
+```bash
+python apply_zabbix_plan.py
+```
+
 Только после успешного цикла:
 - audit
 - mapping review
@@ -736,6 +765,8 @@ python restore_backup.py
 - backup
 - verify
 - restore test
+- host enrichment dry-run
+- host enrichment apply
 
 можно переходить к будущему `migrate`.
 
@@ -743,7 +774,7 @@ python restore_backup.py
 ## 12. Ограничения текущей версии
 
 Контур пока не делает:
-- собственно миграцию;
+- автоматический apply для actions/usergroups/maintenances;
 - postcheck после миграции;
 - rewrite panel/dashboard-level Grafana полей вне variables;
 - backup Grafana перед apply.

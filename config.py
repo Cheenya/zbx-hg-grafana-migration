@@ -43,6 +43,9 @@ SAVE_JSON_INVENTORY: bool = True
 GRAFANA_APPLY_CHANGES: bool = False
 GRAFANA_ZABBIX_DATASOURCE_TYPES: tuple[str, ...] = ("alexanderzobnin-zabbix-datasource",)
 
+# Zabbix apply.
+ZABBIX_APPLY_CHANGES: bool = False
+
 # Каталог и имена артефактов.
 OUTPUT_DIR: str = "v2_output"
 OUTPUT_PREFIX: str = "scope_audit_v2"
@@ -52,6 +55,7 @@ GRAFANA_ORG_AUDIT_PREFIX: str = "grafana_org_audit"
 GRAFANA_ORG_AUDIT_LOG_PREFIX: str = "grafana_org_audit_log"
 GRAFANA_PLAN_PREFIX: str = "grafana_plan"
 GRAFANA_APPLY_PREFIX: str = "grafana_apply"
+ZABBIX_APPLY_PREFIX: str = "zabbix_apply"
 MAPPING_PLAN_PREFIX: str = "mapping_plan_v2"
 IMPACT_PLAN_PREFIX: str = "impact_plan_v2"
 BACKUP_PREFIX: str = "scope_backup_v2"

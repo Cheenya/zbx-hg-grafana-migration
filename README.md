@@ -13,6 +13,7 @@
 - `python build_impact_plan.py` — сбор change-scope по подтверждённому `mapping_plan.xlsx`;
 - `python make_backup.py` — backup строго по `impact_plan.json`;
 - `python verify_backup.py` — проверка backup против `impact_plan.json`;
+- `python apply_zabbix_plan.py` — dry-run/apply донасыщения host-groups на хостах по `impact_plan.json`;
 - `python restore_backup.py` — откат Zabbix из backup.
 
 Что делает аудит:
@@ -27,7 +28,6 @@
   - `$ORG/AS/#AS/#ENV`
   - `$ORG/GAS/#GAS`
   - `$ORG/GAS/#GAS/#ENV`
-  - `$ORG/GAS/#GAS/#AS/#ENV`
   - `$ORG/OS/(LINUX|WINDOWS)`
   - `$ORG/OS/(LINUX|WINDOWS)/#ENV`
 - проверяет существование этих групп в `Data collection -> Host groups`;
@@ -123,6 +123,17 @@
   - maintenances
   - hosts
 
+Что делает `apply_zabbix_plan.py`:
+- читает `SOURCE_IMPACT_PLAN_JSON`;
+- по умолчанию работает как dry-run;
+- в apply-режиме требует валидный backup того же scope;
+- на текущем этапе применяет только host enrichment:
+  - не удаляет old groups;
+  - не трогает actions/usergroups/maintenances;
+- сохраняет:
+  - `zabbix_apply_*.xlsx`
+  - `zabbix_apply_*.json`
+
 Логика `ENV`:
 - `PROD` -> `PROD`
 - любое другое непустое значение -> `NONPROD`
@@ -133,12 +144,12 @@
 
 Что важно:
 - Grafana сейчас работает по логину/паролю;
-- Zabbix-миграцию контур пока не применяет;
+- Zabbix apply сейчас ограничен только донасыщением host groups на хостах;
 - старые host-groups на хостах аудит не удаляет и не планирует к удалению;
 - если нужного тега нет, соответствующая standard group для хоста не строится;
 - Grafana меняется только отдельным `apply_grafana_plan.py` и по умолчанию идёт в dry-run;
 - если `SOURCE_*` путь не задан, соответствующий скрипт берёт самый свежий файл из `OUTPUT_DIR`;
-- контур пока только готовит и проверяет change-scope.
+- change-scope для Zabbix объектов пока только готовится и проверяется, без автоматического apply.
 
 Формат scope:
 - ORG по доменам задаётся в `ORG_DOMAIN_SUFFIXES`, например:
@@ -176,4 +187,5 @@
 9. В `config.py` указать:
    - `SOURCE_BACKUP_FILE`
 10. Запустить `python verify_backup.py`.
-11. Только после этого идти к будущему `migrate`.
+11. Держать `ZABBIX_APPLY_CHANGES = False` и запустить `python apply_zabbix_plan.py` для dry-run.
+12. Если dry-run устраивает, включить `ZABBIX_APPLY_CHANGES = True` и повторить `python apply_zabbix_plan.py`.
