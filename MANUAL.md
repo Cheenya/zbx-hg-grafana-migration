@@ -106,13 +106,16 @@ GRAFANA_AUDIT_ORGIDS = (17, 23)
 ```python
 SCOPE_AS: tuple[str, ...] = ()
 SCOPE_ENV: str = ""
-ORG_CODE: str = ""
+ORG_DOMAIN_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "BNK": ("rosgap.com", "bnkrf.ru"),
+    "DOM": ("ahuel1.ru", "dom.ru"),
+}
 ```
 
-`ORG_CODE`:
-- если контур заведомо `BNK` или `DOM`, лучше задать явно;
-- тогда аудит берёт `ORG` из конфига;
-- если значение пустое, `ORG` выводится по реальным `BNK-*` / `DOM-*` и `BNK/...` / `DOM/...` группам хоста.
+`ORG_DOMAIN_SUFFIXES`:
+- `ORG` сначала определяется по домену из `host`/`name`;
+- если по домену совпадений нет, тогда идёт fallback на реальные `BNK-*` / `DOM-*` и `BNK/...` / `DOM/...` группы хоста;
+- если доменные suffix нужно поменять, правится только этот блок.
 
 - `SCOPE_AS` обязателен;
 - `SCOPE_ENV` опционален.

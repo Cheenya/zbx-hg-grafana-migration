@@ -154,8 +154,26 @@ def standard_group_org(name: str) -> str:
     return str(parsed.get("org") or "") if parsed else ""
 
 
-def resolve_host_org(group_names: Sequence[str]) -> Tuple[str, List[str]]:
-    configured_org = normalize_upper_tag_value(getattr(config, "ORG_CODE", ""))
+def resolve_host_org(host_values: Sequence[str], group_names: Sequence[str]) -> Tuple[str, List[str]]:
+    domain_matches: Set[str] = set()
+    for raw_value in host_values:
+        text = str(raw_value or "").strip().lower()
+        if not text:
+            continue
+        for org_code, suffixes in getattr(config, "ORG_DOMAIN_SUFFIXES", {}).items():
+            normalized_org = normalize_upper_tag_value(org_code)
+            for suffix in suffixes or ():
+                normalized_suffix = str(suffix or "").strip().lower()
+                if not normalized_org or not normalized_suffix:
+                    continue
+                if text == normalized_suffix or text.endswith(f".{normalized_suffix}"):
+                    domain_matches.add(normalized_org)
+
+    if len(domain_matches) == 1:
+        return next(iter(domain_matches)), []
+    if len(domain_matches) > 1:
+        return "", [f"ORG unresolved: multiple domain matches ({join_sorted(domain_matches)})"]
+
     candidates: Set[str] = set()
     for group_name in group_names:
         name = str(group_name or "").strip()
@@ -169,11 +187,6 @@ def resolve_host_org(group_names: Sequence[str]) -> Tuple[str, List[str]]:
         parsed = parse_standard_group(name)
         if parsed and parsed.get("org"):
             candidates.add(str(parsed["org"]))
-
-    if configured_org:
-        if not candidates or candidates == {configured_org}:
-            return configured_org, []
-        return configured_org, [f"ORG config/group mismatch (config={configured_org}, groups={join_sorted(candidates)})"]
 
     if len(candidates) == 1:
         return next(iter(candidates)), []

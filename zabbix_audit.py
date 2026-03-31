@@ -868,7 +868,7 @@ def build_scope_report(
                         "name": str(host.get("name") or ""),
                         "status": str(host.get("status") or ""),
                         "status_label": _host_status_label(host.get("status")),
-                        "ORG": resolve_host_org(group_names)[0],
+                        "ORG": resolve_host_org([str(host.get("host") or ""), str(host.get("name") or "")], group_names)[0],
                         "AS": as_value or "",
                         "ASN": asn_value or "",
                         "GAS": gas_value or "",
@@ -923,7 +923,7 @@ def build_scope_report(
         if asn_value:
             scope_asn_values.add(asn_value)
 
-        org_value, org_reasons = resolve_host_org(group_names)
+        org_value, org_reasons = resolve_host_org([str(host.get("host") or ""), str(host.get("name") or "")], group_names)
         host_row["ORG"] = org_value
         host_row["org_resolution_reasons"] = "; ".join(org_reasons)
 

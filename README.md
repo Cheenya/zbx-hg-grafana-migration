@@ -127,7 +127,9 @@
 - контур пока только готовит и проверяет change-scope.
 
 Формат scope:
-- контурный ORG: `ORG_CODE = "BNK"` или `ORG_CODE = "DOM"`
+- ORG по доменам задаётся в `ORG_DOMAIN_SUFFIXES`, например:
+  - `BNK`: `rosgap.com`, `bnkrf.ru`
+  - `DOM`: `ahuel1.ru`, `dom.ru`
 - одна AS: `SCOPE_AS = ("dom_itmon",)`
 - несколько AS: `SCOPE_AS = ("dom_itmon", "risk_calc")`
 - одна org на все AS: `GRAFANA_ORGIDS = (17,)`

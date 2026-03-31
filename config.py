@@ -17,7 +17,12 @@ GRAFANA_PASSWORD = ""
 # Scope для Zabbix / обычного audit.
 SCOPE_AS: tuple[str, ...] = ()
 SCOPE_ENV: str = ""
-ORG_CODE: str = ""  # BNK или DOM для текущего контура; если пусто, ORG пытаемся вывести из групп хоста
+
+# ORG по доменам/именам хоста. Если совпадений нет, идёт fallback на группы хоста.
+ORG_DOMAIN_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "BNK": ("rosgap.com", "bnkrf.ru"),
+    "DOM": ("ahuel1.ru", "dom.ru"),
+}
 
 # Привязка Grafana org к SCOPE_AS в audit_scope.py.
 GRAFANA_ORGIDS: tuple[int, ...] = ()
