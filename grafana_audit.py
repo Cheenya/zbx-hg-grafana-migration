@@ -15,6 +15,21 @@ NEW_RX = re.compile(r"\b(?:BNK|DOM)/[A-Za-z0-9_.:/-]+\b")
 REGEX_META_RX = re.compile(r"[\\^$*+?()\[\]{}|]")
 QUERY_FIELD_MARKERS = (".query", ".definition", ".expr", ".expression", ".rawsql", ".sql", ".regex")
 PATTERN_FIELD_KINDS = {"query", "definition", "expression", "sql", "regex", "current", "options"}
+GROUP_FIELD_MARKERS = (
+    ".group",
+    ".groups",
+    ".groupby",
+    ".group_by",
+    ".groupfilter",
+    ".group_filter",
+    ".filter",
+    ".filters",
+    ".query",
+    ".definition",
+    ".regex",
+    ".current.",
+    ".options[",
+)
 
 
 def _log(log: Callable[[str], None] | None, message: str) -> None:
@@ -140,6 +155,22 @@ def _is_pattern_candidate(text: str, location_kind: str, field_kind: str) -> boo
         return True
     lower = text.lower()
     return any(marker in lower for marker in QUERY_FIELD_MARKERS)
+
+
+def _is_group_relevant_context(json_path: str, location_kind: str, field_kind: str, variable_name: str = "") -> bool:
+    lower_path = str(json_path or "").lower()
+    lower_name = str(variable_name or "").lower()
+    if field_kind in {"query", "definition", "regex"}:
+        return True
+    if location_kind == "variable":
+        if field_kind in {"current", "options"} and "group" in lower_name:
+            return True
+        return any(marker in lower_path for marker in GROUP_FIELD_MARKERS)
+    if location_kind == "panel":
+        return any(marker in lower_path for marker in GROUP_FIELD_MARKERS)
+    if location_kind == "dashboard":
+        return any(marker in lower_path for marker in GROUP_FIELD_MARKERS)
+    return False
 
 
 def _build_dashboard_url(base_url: str, search_row: Dict[str, Any], dashboard_payload: Dict[str, Any], uid: str) -> str:
@@ -563,6 +594,11 @@ def collect_grafana_report(
                 text = str(context.get("text") or "")
                 if not text.strip():
                     continue
+                location_kind = str(context.get("location_kind") or "")
+                field_kind = str(context.get("field_kind") or "")
+                json_path = str(context.get("json_path") or "")
+                if not _is_group_relevant_context(json_path, location_kind, field_kind, str(context.get("variable_name") or "")):
+                    continue
                 text_lower = text.lower()
 
                 for match in OLD_RX.finditer(text):
@@ -864,10 +900,13 @@ def _truncate(text: str, limit: int = 400) -> str:
     return item[: limit - 3] + "..."
 
 
-def _is_relevant_org_text(text: str, json_path: str, field_kind: str) -> bool:
+def _is_relevant_org_text(text: str, json_path: str, field_kind: str, variable_name: str = "") -> bool:
     lower_text = str(text or "").lower()
     lower_path = str(json_path or "").lower()
     if not lower_text.strip():
+        return False
+    location_kind = "variable" if ".templating.list[" in lower_path else ("panel" if ".panels[" in lower_path else "dashboard")
+    if not _is_group_relevant_context(json_path, location_kind, field_kind, variable_name):
         return False
     if OLD_RX.search(text) or NEW_RX.search(text):
         return True
@@ -877,21 +916,7 @@ def _is_relevant_org_text(text: str, json_path: str, field_kind: str) -> bool:
         return True
     if field_kind in PATTERN_FIELD_KINDS:
         return True
-    markers = (
-        ".datasource",
-        ".group",
-        ".groups",
-        ".host",
-        ".hosts",
-        ".application",
-        ".item",
-        ".filter",
-        ".search",
-        ".query",
-        ".definition",
-        ".regex",
-    )
-    return any(marker in lower_path for marker in markers)
+    return any(marker in lower_path for marker in (".group", ".groups", ".filter", ".filters"))
 
 
 def _classify_org_text(text: str, json_path: str, field_kind: str) -> str:
@@ -1067,7 +1092,7 @@ def collect_grafana_org_report(
                 relevant_count = 0
                 for json_path, text in strings:
                     field_kind = _field_kind(json_path)
-                    if not _is_relevant_org_text(text, json_path, field_kind):
+                    if not _is_relevant_org_text(text, json_path, field_kind, variable_name):
                         continue
                     relevant_count += 1
                     dashboard_variable_rows.append(
