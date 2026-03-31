@@ -31,6 +31,7 @@ python build_impact_plan.py
 python make_backup.py
 python verify_backup.py
 python apply_zabbix_plan.py
+python apply_changes.py
 python restore_backup.py
 ```
 
@@ -43,6 +44,7 @@ python restore_backup.py
 - `make_backup.py` — backup по `impact_plan.json`;
 - `verify_backup.py` — сверка backup против `impact_plan.json`;
 - `apply_zabbix_plan.py` — dry-run/apply host enrichment в Zabbix;
+- `apply_changes.py` — единый apply-runner для Zabbix/Grafana с preview и подтверждением;
 - `restore_backup.py` — откат Zabbix из backup.
 
 
@@ -738,20 +740,22 @@ python restore_backup.py
 
 ### Шаг 8. Zabbix host enrichment
 
-Сначала dry-run:
+Предпочтительный запуск через единый runner:
+
+```bash
+python apply_changes.py --target zabbix
+```
+
+Реальное применение с подтверждением:
+
+```bash
+python apply_changes.py --target zabbix --apply
+```
+
+Если нужен старый прямой запуск без runner:
 
 ```python
 ZABBIX_APPLY_CHANGES = False
-```
-
-```bash
-python apply_zabbix_plan.py
-```
-
-Потом реальное применение:
-
-```python
-ZABBIX_APPLY_CHANGES = True
 ```
 
 ```bash

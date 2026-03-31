@@ -14,6 +14,7 @@
 - `python make_backup.py` — backup строго по `impact_plan.json`;
 - `python verify_backup.py` — проверка backup против `impact_plan.json`;
 - `python apply_zabbix_plan.py` — dry-run/apply донасыщения host-groups на хостах по `impact_plan.json`;
+- `python apply_changes.py` — единый запуск Zabbix/Grafana с preview и подтверждением;
 - `python restore_backup.py` — откат Zabbix из backup.
 
 Что делает аудит:
@@ -134,6 +135,13 @@
   - `zabbix_apply_*.xlsx`
   - `zabbix_apply_*.json`
 
+Что делает `apply_changes.py`:
+- это единая точка запуска apply;
+- умеет `--target zabbix|grafana|both`;
+- по умолчанию делает dry-run;
+- при `--apply` сначала печатает preview и спрашивает подтверждение `y/n`;
+- `--yes` отключает интерактивное подтверждение.
+
 Логика `ENV`:
 - `PROD` -> `PROD`
 - любое другое непустое значение -> `NONPROD`
@@ -187,5 +195,9 @@
 9. В `config.py` указать:
    - `SOURCE_BACKUP_FILE`
 10. Запустить `python verify_backup.py`.
-11. Держать `ZABBIX_APPLY_CHANGES = False` и запустить `python apply_zabbix_plan.py` для dry-run.
-12. Если dry-run устраивает, включить `ZABBIX_APPLY_CHANGES = True` и повторить `python apply_zabbix_plan.py`.
+11. Для dry-run:
+   - `python apply_changes.py --target zabbix`
+   - `python apply_changes.py --target grafana`
+12. Для реального применения:
+   - `python apply_changes.py --target zabbix --apply`
+   - `python apply_changes.py --target grafana --apply`
