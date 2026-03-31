@@ -1737,6 +1737,9 @@ def build_scope_report(
         "maintenances": maintenance_rows,
         "grafana": [],
         "grafana_summary": [],
+        "grafana_variables": [],
+        "grafana_panels": [],
+        "grafana_suggestions": [],
         "inventory": {
             "scope_as": scope_as_values,
             "scope_env": scope_env_value,

@@ -327,10 +327,177 @@ def _build_summary_rows(detail_rows: Sequence[Dict[str, Any]]) -> List[Dict[str,
     return rows
 
 
+def _mapping_row_priority(row: Dict[str, Any]) -> Tuple[int, int, int, str]:
+    selected = str(row.get("selected") or "").strip().lower() in {"1", "y", "yes", "true", "x"}
+    exists = str(row.get("target_exists") or "").strip().lower() == "yes"
+    manual = str(row.get("manual_required") or "").strip().lower() == "yes"
+    rank = int(row.get("candidate_rank") or 9999)
+    return (
+        0 if selected else 1,
+        0 if exists else 1,
+        0 if not manual else 1,
+        rank,
+    )
+
+
+def _pick_mapping_by_old_group(mapping_rows: Sequence[Dict[str, Any]] | None) -> Dict[str, Dict[str, Any]]:
+    by_old: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for row in mapping_rows or []:
+        old_group = str(row.get("old_group") or "").strip()
+        if old_group:
+            by_old[old_group].append(dict(row))
+    chosen: Dict[str, Dict[str, Any]] = {}
+    for old_group, rows in by_old.items():
+        rows.sort(key=lambda row: _mapping_row_priority(row))
+        chosen[old_group] = rows[0]
+    return chosen
+
+
+def _suggest_value(source_text: str, old_group: str, new_group: str) -> str:
+    text = str(source_text or "")
+    if not old_group or not new_group or old_group not in text:
+        return text
+    return text.replace(old_group, new_group)
+
+
+def _build_scoped_grafana_views(
+    detail_rows: Sequence[Dict[str, Any]],
+    mapping_rows: Sequence[Dict[str, Any]] | None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    mapping_by_old = _pick_mapping_by_old_group(mapping_rows)
+    enriched_rows: List[Dict[str, Any]] = []
+    variable_rows: List[Dict[str, Any]] = []
+    panel_rows: List[Dict[str, Any]] = []
+    suggestion_rows: List[Dict[str, Any]] = []
+
+    for row in detail_rows:
+        out = dict(row)
+        source_text = str(row.get("source_text") or "")
+        match_type = str(row.get("match_type") or "")
+        matched_string = str(row.get("matched_string") or "")
+
+        chosen_mapping: Dict[str, Any] | None = None
+        suggestion_status = ""
+        manual_required = "yes"
+        suggested_old_group = ""
+        suggested_new_group = ""
+        suggested_value = ""
+
+        if match_type == "OLD":
+            suggested_old_group = matched_string
+            chosen_mapping = mapping_by_old.get(matched_string)
+            if chosen_mapping:
+                suggested_new_group = str(chosen_mapping.get("new_group") or "")
+                suggested_value = _suggest_value(source_text, suggested_old_group, suggested_new_group)
+                manual_required = str(chosen_mapping.get("manual_required") or "")
+                suggestion_status = "exact_match" if suggested_new_group else "no_target"
+            else:
+                suggestion_status = "no_mapping"
+        elif match_type == "OLD_PATTERN":
+            matched_old_groups = sorted(old_group for old_group in mapping_by_old if old_group in source_text)
+            if len(matched_old_groups) == 1:
+                suggested_old_group = matched_old_groups[0]
+                chosen_mapping = mapping_by_old.get(suggested_old_group)
+                if chosen_mapping:
+                    suggested_new_group = str(chosen_mapping.get("new_group") or "")
+                    suggested_value = _suggest_value(source_text, suggested_old_group, suggested_new_group)
+                suggestion_status = "manual_pattern_single"
+            elif matched_old_groups:
+                suggestion_status = "manual_pattern_ambiguous"
+            else:
+                suggestion_status = "manual_pattern_unresolved"
+            manual_required = "yes"
+
+        out.update(
+            {
+                "suggested_old_group": suggested_old_group,
+                "suggested_new_group": suggested_new_group,
+                "suggested_value": suggested_value,
+                "suggestion_status": suggestion_status,
+                "manual_required": manual_required,
+            }
+        )
+        enriched_rows.append(out)
+
+        location_kind = str(row.get("location_kind") or "")
+        if location_kind == "variable":
+            variable_rows.append(dict(out))
+        if location_kind == "panel":
+            panel_rows.append(dict(out))
+        if suggestion_status:
+            suggestion_rows.append(dict(out))
+
+    return {
+        "detail_rows": enriched_rows,
+        "variable_rows": variable_rows,
+        "panel_rows": panel_rows,
+        "suggestion_rows": suggestion_rows,
+    }
+
+
+def _build_org_grafana_suggestions(
+    detail_rows: Sequence[Dict[str, Any]],
+    mapping_rows: Sequence[Dict[str, Any]] | None,
+) -> List[Dict[str, Any]]:
+    mapping_by_old = _pick_mapping_by_old_group(mapping_rows)
+    suggestions: List[Dict[str, Any]] = []
+    seen: Set[Tuple[str, ...]] = set()
+    for row in detail_rows:
+        source_text = str(row.get("source_text") or "")
+        if not source_text:
+            continue
+        for match in OLD_RX.finditer(source_text):
+            old_group = match.group(0).strip()
+            chosen_mapping = mapping_by_old.get(old_group)
+            if not chosen_mapping:
+                continue
+            new_group = str(chosen_mapping.get("new_group") or "")
+            suggestion_status = "exact_match" if new_group else "no_target"
+            signature = (
+                str(row.get("grafana_org_id") or ""),
+                str(row.get("dashboard_uid") or ""),
+                str(row.get("variable_name") or ""),
+                str(row.get("panel_id") or ""),
+                str(row.get("json_path") or ""),
+                old_group,
+                new_group,
+            )
+            if signature in seen:
+                continue
+            seen.add(signature)
+            suggestions.append(
+                {
+                    "grafana_org_id": str(row.get("grafana_org_id") or ""),
+                    "dashboard_uid": str(row.get("dashboard_uid") or ""),
+                    "dashboard_title": str(row.get("dashboard_title") or ""),
+                    "folder_title": str(row.get("folder_title") or ""),
+                    "dashboard_url": str(row.get("dashboard_url") or ""),
+                    "panel_url": str(row.get("panel_url") or ""),
+                    "panel_id": str(row.get("panel_id") or ""),
+                    "panel_title": str(row.get("panel_title") or ""),
+                    "panel_type": str(row.get("panel_type") or ""),
+                    "variable_name": str(row.get("variable_name") or ""),
+                    "variable_type": str(row.get("variable_type") or ""),
+                    "location_kind": str(row.get("location_kind") or ""),
+                    "field_kind": str(row.get("field_kind") or ""),
+                    "reference_kind": str(row.get("reference_kind") or ""),
+                    "json_path": str(row.get("json_path") or ""),
+                    "old_group": old_group,
+                    "new_group": new_group,
+                    "source_text": source_text,
+                    "planned_value": _suggest_value(source_text, old_group, new_group),
+                    "suggestion_status": suggestion_status,
+                    "manual_required": str(chosen_mapping.get("manual_required") or ""),
+                }
+            )
+    return suggestions
+
+
 def collect_grafana_report(
     conn: config.GrafanaConnection,
     scope_pairs: Sequence[Tuple[str, int]],
     scope_old_groups: Sequence[Dict[str, str]],
+    mapping_rows: Sequence[Dict[str, Any]] | None = None,
     log: Callable[[str], None] | None = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     exact_old: Dict[str, Set[str]] = defaultdict(set)
@@ -492,11 +659,21 @@ def collect_grafana_report(
             }
         )
 
-    summary_rows = _build_summary_rows(detail_rows)
-    _log(log, f"grafana: summary dashboards={len(summary_rows)} detail_rows={len(detail_rows)}")
+    scoped_views = _build_scoped_grafana_views(detail_rows, mapping_rows)
+    summary_rows = _build_summary_rows(scoped_views["detail_rows"])
+    _log(
+        log,
+        "grafana: summary "
+        f"dashboards={len(summary_rows)} detail_rows={len(scoped_views['detail_rows'])} "
+        f"variables={len(scoped_views['variable_rows'])} panels={len(scoped_views['panel_rows'])} "
+        f"suggestions={len(scoped_views['suggestion_rows'])}",
+    )
     return {
         "summary_rows": summary_rows,
-        "detail_rows": detail_rows,
+        "detail_rows": scoped_views["detail_rows"],
+        "variable_rows": scoped_views["variable_rows"],
+        "panel_rows": scoped_views["panel_rows"],
+        "suggestion_rows": scoped_views["suggestion_rows"],
     }
 
 
@@ -767,6 +944,7 @@ def _build_org_summary_rows(
 def collect_grafana_org_report(
     conn: config.GrafanaConnection,
     org_ids: Sequence[int],
+    mapping_rows: Sequence[Dict[str, Any]] | None = None,
     log: Callable[[str], None] | None = None,
 ) -> Dict[str, Any]:
     org_summary_rows: List[Dict[str, Any]] = []
@@ -1054,6 +1232,8 @@ def collect_grafana_org_report(
         "panel_rows": len(panel_rows),
         "detail_rows": len(detail_rows),
     }
+    suggestion_rows = _build_org_grafana_suggestions(detail_rows, mapping_rows)
+    summary["suggestion_rows"] = len(suggestion_rows)
     _log(log, f"grafana-org: summary={summary}")
     return {
         "summary": summary,
@@ -1063,4 +1243,5 @@ def collect_grafana_org_report(
         "variables": variable_rows,
         "panels": panel_rows,
         "details": detail_rows,
+        "suggestions": suggestion_rows,
     }

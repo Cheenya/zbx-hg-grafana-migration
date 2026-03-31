@@ -5,8 +5,9 @@ from datetime import datetime
 from typing import TextIO
 
 import config
-from common import build_org_artifact_path
+from common import build_org_artifact_path, resolve_input_artifact
 from grafana_audit import collect_grafana_org_report
+from mapping_plan import load_mapping_plan_rows
 from report_writer import save_grafana_org_json, write_grafana_org_workbook
 
 
@@ -49,7 +50,23 @@ def main() -> int:
     try:
         connection = config.load_grafana_connection()
         logger.log(f"grafana-org-audit: grafana_url={connection.base_url}")
-        report = collect_grafana_org_report(connection, org_ids, log=logger.log)
+        mapping_rows = []
+        try:
+            mapping_plan_path = resolve_input_artifact(
+                config.SOURCE_MAPPING_PLAN_XLSX,
+                config.MAPPING_PLAN_PREFIX,
+                ".xlsx",
+                scope_as=config.SCOPE_AS,
+                scope_env=config.SCOPE_ENV,
+                scope_gas=config.SCOPE_GAS,
+                label="mapping plan XLSX",
+            )
+            mapping_rows = load_mapping_plan_rows(mapping_plan_path)
+            logger.log(f"grafana-org-audit: using mapping plan {mapping_plan_path} rows={len(mapping_rows)}")
+        except RuntimeError as exc:
+            logger.log(f"grafana-org-audit: mapping plan not found, suggestions disabled: {exc}")
+
+        report = collect_grafana_org_report(connection, org_ids, mapping_rows=mapping_rows, log=logger.log)
         report["summary"]["audit_log_path"] = out_log
 
         logger.log(f"grafana-org-audit: writing xlsx {out_xlsx}")

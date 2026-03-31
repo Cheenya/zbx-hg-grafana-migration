@@ -7,6 +7,7 @@ from typing import Any, Dict, Mapping, Sequence
 from openpyxl import Workbook  # type: ignore
 
 from common import autosize_columns
+from mapping_plan import MAPPING_PLAN_HEADERS
 
 
 HOST_HEADERS = [
@@ -143,6 +144,39 @@ GRAFANA_DETAIL_HEADERS = [
     "source_text",
     "json_path",
     "count",
+    "suggested_old_group",
+    "suggested_new_group",
+    "suggested_value",
+    "suggestion_status",
+    "manual_required",
+]
+
+GRAFANA_SUGGESTION_HEADERS = [
+    "AS",
+    "grafana_org_id",
+    "dashboard_uid",
+    "dashboard_title",
+    "folder_title",
+    "dashboard_url",
+    "panel_url",
+    "panel_id",
+    "panel_title",
+    "panel_type",
+    "variable_name",
+    "variable_type",
+    "location_kind",
+    "field_kind",
+    "reference_kind",
+    "match_type",
+    "matched_string",
+    "pattern_key",
+    "source_text",
+    "json_path",
+    "suggested_old_group",
+    "suggested_new_group",
+    "suggested_value",
+    "suggestion_status",
+    "manual_required",
 ]
 
 GRAFANA_ORG_SUMMARY_HEADERS = [
@@ -238,6 +272,160 @@ GRAFANA_ORG_DETAIL_HEADERS = [
     "json_path",
 ]
 
+GRAFANA_ORG_SUGGESTION_HEADERS = [
+    "grafana_org_id",
+    "dashboard_uid",
+    "dashboard_title",
+    "folder_title",
+    "dashboard_url",
+    "panel_url",
+    "panel_id",
+    "panel_title",
+    "panel_type",
+    "variable_name",
+    "variable_type",
+    "location_kind",
+    "field_kind",
+    "reference_kind",
+    "json_path",
+    "old_group",
+    "new_group",
+    "source_text",
+    "planned_value",
+    "suggestion_status",
+    "manual_required",
+]
+
+EXPECTED_GROUP_HEADERS = [
+    "group_name",
+    "groupid",
+    "group_kind",
+    "org",
+    "exists_in_zabbix",
+    "source_hosts_count",
+    "host_present_count",
+    "host_missing_count",
+    "as_values",
+    "env_raw_values",
+    "env_scope_values",
+    "gas_values",
+    "os_families",
+    "sample_hosts",
+]
+
+HOST_EXPECTED_HEADERS = [
+    "hostid",
+    "host",
+    "name",
+    "status",
+    "status_label",
+    "ORG",
+    "AS",
+    "GAS",
+    "GUEST_NAME",
+    "OS_FAMILY",
+    "ENV_RAW",
+    "ENV_SCOPE",
+    "group_name",
+    "groupid",
+    "group_kind",
+    "exists_in_zabbix",
+    "on_host",
+]
+
+HOST_ENRICHMENT_HEADERS = [
+    "hostid",
+    "host",
+    "name",
+    "status",
+    "status_label",
+    "ORG",
+    "AS",
+    "ENV_RAW",
+    "ENV_SCOPE",
+    "GAS",
+    "GUEST_NAME",
+    "OS_FAMILY",
+    "old_groups",
+    "standard_groups",
+    "expected_env_groups",
+    "expected_as_groups",
+    "expected_gas_groups",
+    "expected_os_groups",
+    "catalog_existing_groups",
+    "catalog_missing_groups",
+    "host_present_expected_groups",
+    "host_missing_expected_groups",
+    "suggested_pairs",
+    "suggested_new_groups",
+    "host_action",
+    "unresolved_reasons",
+    "manual_required",
+]
+
+ZABBIX_MAPPING_PREVIEW_HEADERS = [
+    "object_type",
+    "object_id",
+    "object_name",
+    "where_found",
+    "field_path",
+    "old_group",
+    "old_groupid",
+    "candidate_new_group",
+    "candidate_new_groupid",
+    "candidate_rank",
+    "candidate_count",
+    "target_kind",
+    "target_exists",
+    "mapping_status",
+    "object_has_candidate_new",
+    "include_reason",
+    "manual_required",
+    "host_action",
+    "hosts_need_add_new",
+    "hosts_already_have_new",
+]
+
+ACTION_HEADERS = [
+    "actionid",
+    "name",
+    "status",
+    "where_found",
+    "matched_groupids",
+    "matched_group_names",
+    "candidate_new_groupids_present",
+    "candidate_new_group_names_present",
+    "include_reason",
+    "recipient_usergroups",
+    "recipient_users",
+    "recipients_media",
+]
+
+USERGROUP_HEADERS = [
+    "usrgrpid",
+    "name",
+    "rights_on_old_groups",
+    "rights_on_new_groups",
+    "candidate_new_groups_already_present",
+    "matching_tag_filters",
+    "include_reason",
+    "users",
+    "users_media",
+    "is_action_recipient",
+]
+
+MAINTENANCE_HEADERS = [
+    "maintenanceid",
+    "name",
+    "matched_groupids",
+    "matched_group_names",
+    "candidate_new_groupids_present",
+    "candidate_new_group_names_present",
+    "include_reason",
+    "active_since",
+    "active_till",
+]
+
 
 def _append_rows(ws, rows: Sequence[Dict[str, Any]], headers: Sequence[str]) -> None:
     ws.append(list(headers))
@@ -303,6 +491,9 @@ def save_inventory_json(report: Dict[str, Any], path: str) -> None:
         "maintenances": report["maintenances"],
         "grafana": report["grafana"],
         "grafana_summary": report["grafana_summary"],
+        "grafana_variables": report.get("grafana_variables", []),
+        "grafana_panels": report.get("grafana_panels", []),
+        "grafana_suggestions": report.get("grafana_suggestions", []),
     }
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
@@ -351,76 +542,6 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
 
     replace_missing_ws = wb.create_sheet("HOSTS_NO_ANY_NEW")
     _append_rows(replace_missing_ws, report["hosts_no_any_new"], HOST_HEADERS)
-
-    enrichment_ws = wb.create_sheet("HOST_ENRICHMENT")
-    _append_rows(
-        enrichment_ws,
-        report["host_enrichment"],
-        [
-            "hostid",
-            "host",
-            "name",
-            "status",
-            "status_label",
-            "ORG",
-            "AS",
-            "ENV_RAW",
-            "ENV_SCOPE",
-            "GAS",
-            "GUEST_NAME",
-            "OS_FAMILY",
-            "old_groups",
-            "standard_groups",
-            "expected_env_groups",
-            "expected_as_groups",
-            "expected_gas_groups",
-            "expected_os_groups",
-            "catalog_existing_groups",
-            "catalog_missing_groups",
-            "host_present_expected_groups",
-            "host_missing_expected_groups",
-            "suggested_pairs",
-            "suggested_new_groups",
-            "host_action",
-            "unresolved_reasons",
-            "manual_required",
-        ],
-    )
-
-    need_enrichment_ws = wb.create_sheet("HOSTS_NEED_ENRICH")
-    _append_rows(
-        need_enrichment_ws,
-        report["hosts_need_enrichment"],
-        [
-            "hostid",
-            "host",
-            "name",
-            "status",
-            "status_label",
-            "ORG",
-            "AS",
-            "ENV_RAW",
-            "ENV_SCOPE",
-            "GAS",
-            "GUEST_NAME",
-            "OS_FAMILY",
-            "old_groups",
-            "standard_groups",
-            "expected_env_groups",
-            "expected_as_groups",
-            "expected_gas_groups",
-            "expected_os_groups",
-            "catalog_existing_groups",
-            "catalog_missing_groups",
-            "host_present_expected_groups",
-            "host_missing_expected_groups",
-            "suggested_pairs",
-            "suggested_new_groups",
-            "host_action",
-            "unresolved_reasons",
-            "manual_required",
-        ],
-    )
 
     clean_ws = wb.create_sheet("HOSTS_CLEAN")
     _append_rows(clean_ws, report["hosts_clean"], HOST_HEADERS)
@@ -481,180 +602,95 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
         ],
     )
 
-    expected_ws = wb.create_sheet("EXPECTED_GROUPS")
-    _append_rows(
-        expected_ws,
-        report["expected_groups"],
-        [
-            "group_name",
-            "groupid",
-            "group_kind",
-            "org",
-            "exists_in_zabbix",
-            "source_hosts_count",
-            "host_present_count",
-            "host_missing_count",
-            "as_values",
-            "env_raw_values",
-            "env_scope_values",
-            "gas_values",
-            "os_families",
-            "sample_hosts",
-        ],
-    )
-
-    expected_host_ws = wb.create_sheet("HOST_EXPECTED")
-    _append_rows(
-        expected_host_ws,
-        report["host_expected_groups"],
-        [
-            "hostid",
-            "host",
-            "name",
-            "status",
-            "status_label",
-            "ORG",
-            "AS",
-            "GAS",
-            "GUEST_NAME",
-            "OS_FAMILY",
-            "ENV_RAW",
-            "ENV_SCOPE",
-            "group_name",
-            "groupid",
-            "group_kind",
-            "exists_in_zabbix",
-            "on_host",
-        ],
-    )
-
-    mapping_ws = wb.create_sheet("MAPPING_PLAN")
-    _append_rows(
-        mapping_ws,
-        report["mapping_plan"],
-        [
-            "selected",
-            "AS",
-            "ORG",
-            "old_group",
-            "old_groupid",
-            "old_group_kind",
-            "legacy_env_token",
-            "new_group",
-            "new_groupid",
-            "target_kind",
-            "target_exists",
-            "candidate_rank",
-            "candidate_count",
-            "old_hosts_count",
-            "target_scope_hosts",
-            "new_hosts_count",
-            "host_action",
-            "hosts_need_add_new",
-            "hosts_already_have_new",
-            "old_orgs",
-            "old_envs",
-            "old_env_scopes",
-            "target_env_raw",
-            "auto_reason",
-            "manual_required",
-            "status",
-            "comment",
-        ],
-    )
-
-    preview_ws = wb.create_sheet("ZBX_MAP_PREVIEW")
-    _append_rows(
-        preview_ws,
-        report["zabbix_mapping_preview"],
-        [
-            "object_type",
-            "object_id",
-            "object_name",
-            "where_found",
-            "field_path",
-            "old_group",
-            "old_groupid",
-            "candidate_new_group",
-            "candidate_new_groupid",
-            "candidate_rank",
-            "candidate_count",
-            "target_kind",
-            "target_exists",
-            "mapping_status",
-            "object_has_candidate_new",
-            "include_reason",
-            "manual_required",
-            "host_action",
-            "hosts_need_add_new",
-            "hosts_already_have_new",
-        ],
-    )
-
-    actions_ws = wb.create_sheet("ACTIONS")
-    _append_rows(
-        actions_ws,
-        report["actions"],
-        [
-            "actionid",
-            "name",
-            "status",
-            "where_found",
-            "matched_groupids",
-            "matched_group_names",
-            "candidate_new_groupids_present",
-            "candidate_new_group_names_present",
-            "include_reason",
-            "recipient_usergroups",
-            "recipient_users",
-            "recipients_media",
-        ],
-    )
-
-    usergroups_ws = wb.create_sheet("USERGROUPS")
-    _append_rows(
-        usergroups_ws,
-        report["usergroups"],
-        [
-            "usrgrpid",
-            "name",
-            "rights_on_old_groups",
-            "rights_on_new_groups",
-            "candidate_new_groups_already_present",
-            "matching_tag_filters",
-            "include_reason",
-            "users",
-            "users_media",
-            "is_action_recipient",
-        ],
-    )
-
-    maintenances_ws = wb.create_sheet("MAINTENANCES")
-    _append_rows(
-        maintenances_ws,
-        report["maintenances"],
-        [
-            "maintenanceid",
-            "name",
-            "matched_groupids",
-            "matched_group_names",
-            "candidate_new_groupids_present",
-            "candidate_new_group_names_present",
-            "include_reason",
-            "active_since",
-            "active_till",
-        ],
-    )
-
-    grafana_summary_ws = wb.create_sheet("GRAFANA_SUMMARY")
-    _append_rows(grafana_summary_ws, report["grafana_summary"], GRAFANA_SUMMARY_HEADERS)
-    _apply_hyperlinks(grafana_summary_ws, report["grafana_summary"], GRAFANA_SUMMARY_HEADERS, {"dashboard_url": "dashboard_url"})
-
     inventory_ws = wb.create_sheet("INVENTORY")
     inventory_ws.append(["section", "value"])
     for key, value in report["inventory"].items():
         inventory_ws.append([key, json.dumps(value, ensure_ascii=False)])
     autosize_columns(inventory_ws)
+
+    wb.save(out_path)
+
+
+def write_mapping_workbook(report: Dict[str, Any], out_path: str) -> None:
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    summary_ws = wb.create_sheet("SUMMARY")
+    summary_ws.append(["key", "value"])
+    for key, value in report["summary"].items():
+        if isinstance(value, list):
+            rendered = ", ".join(str(item) for item in value)
+        else:
+            rendered = value
+        summary_ws.append([key, rendered])
+    autosize_columns(summary_ws)
+
+    mapping_ws = wb.create_sheet("MAPPING_PLAN")
+    _append_rows(mapping_ws, report["mapping_plan"], MAPPING_PLAN_HEADERS)
+
+    expected_ws = wb.create_sheet("EXPECTED_GROUPS")
+    _append_rows(expected_ws, report["expected_groups"], EXPECTED_GROUP_HEADERS)
+
+    expected_host_ws = wb.create_sheet("HOST_EXPECTED")
+    _append_rows(expected_host_ws, report["host_expected_groups"], HOST_EXPECTED_HEADERS)
+
+    enrichment_ws = wb.create_sheet("HOST_ENRICHMENT")
+    _append_rows(enrichment_ws, report["host_enrichment"], HOST_ENRICHMENT_HEADERS)
+
+    need_enrichment_ws = wb.create_sheet("HOSTS_NEED_ENRICH")
+    _append_rows(need_enrichment_ws, report["hosts_need_enrichment"], HOST_ENRICHMENT_HEADERS)
+
+    preview_ws = wb.create_sheet("ZBX_MAP_PREVIEW")
+    _append_rows(preview_ws, report["zabbix_mapping_preview"], ZABBIX_MAPPING_PREVIEW_HEADERS)
+
+    actions_ws = wb.create_sheet("ACTIONS")
+    _append_rows(actions_ws, report["actions"], ACTION_HEADERS)
+
+    usergroups_ws = wb.create_sheet("USERGROUPS")
+    _append_rows(usergroups_ws, report["usergroups"], USERGROUP_HEADERS)
+
+    maintenances_ws = wb.create_sheet("MAINTENANCES")
+    _append_rows(maintenances_ws, report["maintenances"], MAINTENANCE_HEADERS)
+
+    grafana_summary_ws = wb.create_sheet("GRAFANA_SUMMARY")
+    _append_rows(grafana_summary_ws, report["grafana_summary"], GRAFANA_SUMMARY_HEADERS)
+    _apply_hyperlinks(grafana_summary_ws, report["grafana_summary"], GRAFANA_SUMMARY_HEADERS, {"dashboard_url": "dashboard_url"})
+
+    grafana_variables_ws = wb.create_sheet("GRAFANA_VARIABLES")
+    _append_rows(grafana_variables_ws, report.get("grafana_variables", []), GRAFANA_DETAIL_HEADERS)
+    _apply_hyperlinks(
+        grafana_variables_ws,
+        report.get("grafana_variables", []),
+        GRAFANA_DETAIL_HEADERS,
+        {
+            "dashboard_url": "dashboard_url",
+            "panel_url": "panel_url",
+        },
+    )
+
+    grafana_panels_ws = wb.create_sheet("GRAFANA_PANELS")
+    _append_rows(grafana_panels_ws, report.get("grafana_panels", []), GRAFANA_DETAIL_HEADERS)
+    _apply_hyperlinks(
+        grafana_panels_ws,
+        report.get("grafana_panels", []),
+        GRAFANA_DETAIL_HEADERS,
+        {
+            "dashboard_url": "dashboard_url",
+            "panel_url": "panel_url",
+        },
+    )
+
+    grafana_suggestions_ws = wb.create_sheet("GRAFANA_SUGGESTIONS")
+    _append_rows(grafana_suggestions_ws, report.get("grafana_suggestions", []), GRAFANA_SUGGESTION_HEADERS)
+    _apply_hyperlinks(
+        grafana_suggestions_ws,
+        report.get("grafana_suggestions", []),
+        GRAFANA_SUGGESTION_HEADERS,
+        {
+            "dashboard_url": "dashboard_url",
+            "panel_url": "panel_url",
+        },
+    )
 
     wb.save(out_path)
 
@@ -666,8 +702,12 @@ def write_grafana_workbook(report: Dict[str, Any], out_path: str) -> None:
     summary_rows = [
         {"key": "scope_as", "value": ", ".join(str(item) for item in report["summary"].get("scope_as") or [])},
         {"key": "scope_env", "value": str(report["summary"].get("scope_env") or "")},
+        {"key": "scope_gas", "value": ", ".join(str(item) for item in report["summary"].get("scope_gas") or [])},
         {"key": "grafana_dashboards", "value": report["summary"].get("grafana_dashboards", len(report["grafana_summary"]))},
         {"key": "grafana_rows", "value": report["summary"].get("grafana_rows", len(report["grafana"]))},
+        {"key": "grafana_variable_rows", "value": report["summary"].get("grafana_variable_rows", len(report.get("grafana_variables", [])))},
+        {"key": "grafana_panel_rows", "value": report["summary"].get("grafana_panel_rows", len(report.get("grafana_panels", [])))},
+        {"key": "grafana_suggestion_rows", "value": report["summary"].get("grafana_suggestion_rows", len(report.get("grafana_suggestions", [])))},
         {"key": "grafana_error", "value": report["summary"].get("grafana_error", "")},
     ]
     summary_ws = wb.create_sheet("SUMMARY")
@@ -683,6 +723,42 @@ def write_grafana_workbook(report: Dict[str, Any], out_path: str) -> None:
         details_ws,
         report["grafana"],
         GRAFANA_DETAIL_HEADERS,
+        {
+            "dashboard_url": "dashboard_url",
+            "panel_url": "panel_url",
+        },
+    )
+
+    variables_ws = wb.create_sheet("VARIABLES")
+    _append_rows(variables_ws, report.get("grafana_variables", []), GRAFANA_DETAIL_HEADERS)
+    _apply_hyperlinks(
+        variables_ws,
+        report.get("grafana_variables", []),
+        GRAFANA_DETAIL_HEADERS,
+        {
+            "dashboard_url": "dashboard_url",
+            "panel_url": "panel_url",
+        },
+    )
+
+    panels_ws = wb.create_sheet("PANELS")
+    _append_rows(panels_ws, report.get("grafana_panels", []), GRAFANA_DETAIL_HEADERS)
+    _apply_hyperlinks(
+        panels_ws,
+        report.get("grafana_panels", []),
+        GRAFANA_DETAIL_HEADERS,
+        {
+            "dashboard_url": "dashboard_url",
+            "panel_url": "panel_url",
+        },
+    )
+
+    suggestions_ws = wb.create_sheet("SUGGESTIONS")
+    _append_rows(suggestions_ws, report.get("grafana_suggestions", []), GRAFANA_SUGGESTION_HEADERS)
+    _apply_hyperlinks(
+        suggestions_ws,
+        report.get("grafana_suggestions", []),
+        GRAFANA_SUGGESTION_HEADERS,
         {
             "dashboard_url": "dashboard_url",
             "panel_url": "panel_url",
@@ -705,6 +781,7 @@ def save_grafana_org_json(report: Dict[str, Any], path: str) -> None:
         "variables": report["variables"],
         "panels": report["panels"],
         "details": report["details"],
+        "suggestions": report.get("suggestions", []),
     }
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
@@ -756,6 +833,18 @@ def write_grafana_org_workbook(report: Dict[str, Any], out_path: str) -> None:
         details_ws,
         report["details"],
         GRAFANA_ORG_DETAIL_HEADERS,
+        {
+            "dashboard_url": "dashboard_url",
+            "panel_url": "panel_url",
+        },
+    )
+
+    suggestions_ws = wb.create_sheet("SUGGESTIONS")
+    _append_rows(suggestions_ws, report.get("suggestions", []), GRAFANA_ORG_SUGGESTION_HEADERS)
+    _apply_hyperlinks(
+        suggestions_ws,
+        report.get("suggestions", []),
+        GRAFANA_ORG_SUGGESTION_HEADERS,
         {
             "dashboard_url": "dashboard_url",
             "panel_url": "panel_url",

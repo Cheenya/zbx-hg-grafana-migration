@@ -8,8 +8,7 @@ import config
 from api_clients import ZabbixAPI
 from common import build_artifact_path, normalize_scope_env, normalize_values, resolve_scope_org_pairs
 from grafana_audit import collect_grafana_report
-from mapping_plan import write_mapping_plan_xlsx
-from report_writer import save_inventory_json, write_grafana_workbook, write_workbook
+from report_writer import save_inventory_json, write_grafana_workbook, write_mapping_workbook, write_workbook
 from zabbix_audit import build_scope_report
 
 
@@ -78,11 +77,23 @@ def main() -> int:
                 grafana = config.load_grafana_connection()
                 scope_pairs = resolve_scope_org_pairs(scope_as, config.GRAFANA_ORGIDS)
                 logger.log(f"audit: grafana_scope_pairs={scope_pairs}")
-                grafana_report = collect_grafana_report(grafana, scope_pairs, report["inventory"]["grafana_old_groups"], log=logger.log)
+                grafana_report = collect_grafana_report(
+                    grafana,
+                    scope_pairs,
+                    report["inventory"]["grafana_old_groups"],
+                    mapping_rows=report["mapping_plan"],
+                    log=logger.log,
+                )
                 report["grafana"] = grafana_report["detail_rows"]
                 report["grafana_summary"] = grafana_report["summary_rows"]
+                report["grafana_variables"] = grafana_report["variable_rows"]
+                report["grafana_panels"] = grafana_report["panel_rows"]
+                report["grafana_suggestions"] = grafana_report["suggestion_rows"]
                 report["summary"]["grafana_rows"] = len(report["grafana"])
                 report["summary"]["grafana_dashboards"] = len(report["grafana_summary"])
+                report["summary"]["grafana_variable_rows"] = len(report["grafana_variables"])
+                report["summary"]["grafana_panel_rows"] = len(report["grafana_panels"])
+                report["summary"]["grafana_suggestion_rows"] = len(report["grafana_suggestions"])
             except Exception as exc:
                 report["summary"]["grafana_error"] = str(exc)
                 logger.log(f"audit: grafana error: {exc}")
@@ -90,8 +101,8 @@ def main() -> int:
         logger.log(f"audit: writing xlsx {out_xlsx}")
         write_workbook(report, out_xlsx)
 
-        logger.log(f"audit: writing mapping plan {out_mapping}")
-        write_mapping_plan_xlsx(report["mapping_plan"], out_mapping)
+        logger.log(f"audit: writing mapping workbook {out_mapping}")
+        write_mapping_workbook(report, out_mapping)
 
         if config.ENABLE_GRAFANA and ("grafana_error" not in report["summary"]):
             logger.log(f"audit: writing grafana xlsx {out_grafana}")
