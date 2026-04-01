@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Sequence, Set
+from typing import Any, Dict, List, Sequence, Set, Tuple
 
 from openpyxl import Workbook  # type: ignore
 
@@ -104,6 +104,22 @@ def _group_host_rows(impact_plan: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return grouped
 
 
+def _assert_host_massadd_available(api: ZabbixAPI) -> None:
+    """Проверяем доступность метода host.massadd для текущей роли."""
+    try:
+        api.call("host.massadd", {"hosts": [], "groups": []})
+    except RuntimeError as exc:
+        message = str(exc)
+        if 'No permissions to call "host.massadd"' in message:
+            raise RuntimeError(
+                'Zabbix API denies "host.massadd" for this user/role. '
+                'Check role API permissions for host.massadd.'
+            ) from exc
+        if "Zabbix API error (host.massadd):" in message:
+            return
+        raise
+
+
 def _build_skipped_rows(impact_plan: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for row in impact_plan.get("object_mapping_plan") or []:
@@ -130,6 +146,16 @@ def _build_skipped_rows(impact_plan: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
+def _batch_massadd_rows(pending_rows: Sequence[Dict[str, Any]]) -> Dict[Tuple[str, ...], List[Dict[str, Any]]]:
+    batches: Dict[Tuple[str, ...], List[Dict[str, Any]]] = {}
+    for row in pending_rows:
+        key = tuple(sorted(str(item).strip() for item in (row.get("add_groupids") or []) if str(item).strip()))
+        if not key:
+            continue
+        batches.setdefault(key, []).append(row)
+    return batches
+
+
 def apply_host_enrichment(api: ZabbixAPI, impact_plan: Dict[str, Any], dry_run: bool) -> Dict[str, Any]:
     grouped = _group_host_rows(impact_plan)
     hostids = sorted(grouped)
@@ -137,10 +163,12 @@ def apply_host_enrichment(api: ZabbixAPI, impact_plan: Dict[str, Any], dry_run: 
     live_by_id = {str(row.get("hostid") or "").strip(): row for row in live_hosts if str(row.get("hostid") or "").strip()}
 
     results: List[Dict[str, Any]] = []
+    pending_rows: List[Dict[str, Any]] = []
     applied_hosts = 0
     changed_hosts = 0
     already_hosts = 0
     missing_hosts = 0
+    applied_batches = 0
 
     for hostid in hostids:
         plan_row = grouped[hostid]
@@ -194,28 +222,39 @@ def apply_host_enrichment(api: ZabbixAPI, impact_plan: Dict[str, Any], dry_run: 
             )
             continue
 
-        if dry_run:
-            status = "dry_run_add"
-        else:
-            payload_groups = [{"groupid": groupid} for groupid in sorted(current_groupids.union(add_groupids))]
-            api.call("host.update", {"hostid": hostid, "groups": payload_groups})
-            status = "applied"
-            applied_hosts += 1
-
-        changed_hosts += 1
-        results.append(
+        pending_rows.append(
             {
                 "hostid": hostid,
                 "host": str(host.get("host") or "").strip(),
                 "name": str(host.get("name") or "").strip(),
-                "status": status,
+                "status": "dry_run_add" if dry_run else "pending_apply",
                 "mode": "DRY-RUN" if dry_run else "APPLY",
                 "current_groups": join_sorted(current_group_names),
                 "planned_groups": join_sorted(plan_row["groups"].values()),
                 "added_groups": join_sorted(add_group_names),
                 "details": join_sorted(plan_row["details"].values()),
+                "add_groupids": sorted(add_groupids),
             }
         )
+        changed_hosts += 1
+
+    if not dry_run and pending_rows:
+        for add_groupids, rows in _batch_massadd_rows(pending_rows).items():
+            api.call(
+                "host.massadd",
+                {
+                    "hosts": [{"hostid": row["hostid"]} for row in rows],
+                    "groups": [{"groupid": groupid} for groupid in add_groupids],
+                },
+            )
+            applied_batches += 1
+            applied_hosts += len(rows)
+            for row in rows:
+                row["status"] = "applied"
+
+    for row in pending_rows:
+        row.pop("add_groupids", None)
+        results.append(row)
 
     skipped_rows = _build_skipped_rows(impact_plan)
     summary = impact_plan.get("summary") or {}
@@ -235,6 +274,7 @@ def apply_host_enrichment(api: ZabbixAPI, impact_plan: Dict[str, Any], dry_run: 
             "planned_hosts": len(hostids),
             "changed_hosts": changed_hosts,
             "applied_hosts": applied_hosts,
+            "applied_batches": applied_batches,
             "already_present_hosts": already_hosts,
             "missing_hosts": missing_hosts,
             "skipped_object_rows": len(skipped_rows),
@@ -330,6 +370,8 @@ def main() -> int:
         print(f"Using latest impact plan JSON: {impact_plan_path}")
 
     if not dry_run:
+        print("Checking Zabbix API permissions for host.massadd")
+        _assert_host_massadd_available(api)
         backup_path = resolve_input_artifact(
             config.SOURCE_BACKUP_FILE,
             config.BACKUP_PREFIX,

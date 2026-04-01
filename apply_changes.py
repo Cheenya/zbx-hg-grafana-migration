@@ -11,7 +11,13 @@ from typing import Any, Dict, List, Sequence
 
 import config
 from api_clients import ZabbixAPI
-from apply_zabbix_plan import apply_host_enrichment, load_impact_plan, write_apply_xlsx as write_zabbix_apply_xlsx, _validate_backup_scope
+from apply_zabbix_plan import (
+    _assert_host_massadd_available,
+    _validate_backup_scope,
+    apply_host_enrichment,
+    load_impact_plan,
+    write_apply_xlsx as write_zabbix_apply_xlsx,
+)
 from common import build_artifact_path, build_org_artifact_path, normalize_values, resolve_input_artifact
 from grafana_plan import (
     apply_grafana_plan,
@@ -176,6 +182,8 @@ def main() -> int:
         api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
         api.login(connection.username, connection.password)
         if not dry_run:
+            print("Checking Zabbix API permissions for host.massadd")
+            _assert_host_massadd_available(api)
             print(f"Validating backup for Zabbix apply: {backup_path}")
             _validate_backup_scope(backup_path, impact_plan, api)
 

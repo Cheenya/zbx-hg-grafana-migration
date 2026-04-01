@@ -109,7 +109,7 @@ GRAFANA_AUDIT_ORGIDS = (17, 23)
 
 `ZABBIX_APPLY_CHANGES`:
 - `False` — `apply_zabbix_plan.py` работает только как dry-run;
-- `True` — `apply_zabbix_plan.py` реально вызывает `host.update` для донасыщения группами.
+- `True` — `apply_zabbix_plan.py` реально вызывает `host.massadd` для донасыщения группами.
 
 `GRAFANA_ZABBIX_DATASOURCE_TYPES`:
 - список допустимых `type`/`pluginId` для Grafana datasource audit;
