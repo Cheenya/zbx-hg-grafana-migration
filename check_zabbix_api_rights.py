@@ -53,14 +53,14 @@ def _get_auth_info(api: ZabbixAPI) -> Dict[str, Any]:
     if getattr(api, "api_token", ""):
         auth_info = api.call(
             "user.checkAuthentication",
-            {"token": api.api_token, "extend": False},
+            {"token": api.api_token},
             include_auth=False,
             include_bearer=False,
         )
     else:
         auth_info = api.call(
             "user.checkAuthentication",
-            {"sessionid": api.auth, "extend": False},
+            {"sessionid": api.auth},
             include_auth=False,
             include_bearer=False,
         )
@@ -74,15 +74,11 @@ def _get_auth_info(api: ZabbixAPI) -> Dict[str, Any]:
             {
                 "output": ["userid", "username", "name", "surname", "roleid"],
                 "userids": [userid],
-                "selectRole": "extend",
             },
         )
         if rows:
             user_row = rows[0]
-            role_obj = user_row.get("role") or {}
-            if role_obj:
-                role_row = role_obj
-            elif str(user_row.get("roleid") or "").strip():
+            if str(user_row.get("roleid") or "").strip():
                 roles = api.call(
                     "role.get",
                     {
