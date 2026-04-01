@@ -377,23 +377,13 @@ def _is_supported_plan_field(location_kind: str, json_path: str, field_kind: str
     lower_kind = str(field_kind or "").strip().lower()
     if any(marker in lower_path for marker in (".host.filter", ".hosts.filter", ".host_filter", ".hosts_filter")):
         return False
-    if lower_kind in {"query", "definition", "regex", "expression", "sql"}:
-        return True
-    return any(
-        marker in lower_path
-        for marker in (
-            ".group",
-            ".groups",
-            ".groupby",
-            ".group_by",
-            ".groupfilter",
-            ".group_filter",
-            ".filter",
-            ".filters",
-            ".current.",
-            ".options[",
-        )
-    )
+    if location_kind == "variable":
+        if lower_kind in {"query", "definition", "regex"}:
+            return True
+        return any(marker in lower_path for marker in (".current.", ".options["))
+    if location_kind == "panel":
+        return ".targets[" in lower_path and ".group.filter" in lower_path
+    return False
 
 
 def build_grafana_plan(
@@ -586,6 +576,15 @@ def build_grafana_plan_from_impact(
                     **base_review,
                     "status": "unsupported_location",
                     "message": "Unsupported Grafana location_kind for automatic apply.",
+                }
+            )
+            continue
+        if location_kind == "dashboard":
+            review_rows.append(
+                {
+                    **base_review,
+                    "status": "unsupported_location",
+                    "message": "Dashboard-level matches stay in review; automatic apply is limited to variables and panel group.filter.",
                 }
             )
             continue

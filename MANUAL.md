@@ -413,7 +413,9 @@ MAPPING_FORBID_ENV_MISMATCH = True
 Шаги:
 1. Читает `impact_plan.json`.
 2. Берёт из него `grafana_changes` и `grafana_manual_review`.
-3. Оставляет только исполняемые group-related строки по whitelisted JSON paths.
+3. Оставляет только исполняемые строки в строго ограниченных контекстах:
+   - variable: `query`, `definition`, `regex`, `current.*`, `options[*]`;
+   - panel: только `targets[*].group.filter`.
 4. Строит план изменений для:
    - `query`
    - `regex`
@@ -422,7 +424,7 @@ MAPPING_FORBID_ENV_MISMATCH = True
    - `current.value`
    - `options[*].text`
    - `options[*].value`
-   - безопасных `panel/dashboard` group-related `filter/groups/group/regex/query` полей
+   - `panel.targets[*].group.filter`
 5. Делит изменения на режимы:
    - `exact` — строка должна оставаться полностью производной от `impact_plan`;
    - `manual_regex` — допускается ручной `planned_value` для regex/query случаев.

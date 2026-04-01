@@ -8,7 +8,7 @@
 Что уже есть:
 - `python audit_scope.py` — read-only аудит Zabbix/Grafana;
 - `python grafana_org_audit.py` — отдельный аудит Grafana по `orgId`, без привязки к AS;
-- `python build_grafana_plan.py` — сбор плана замены old/new host-groups в Grafana variables/panels/dashboard fields по whitelisted group-related JSON paths;
+- `python build_grafana_plan.py` — сбор плана замены old/new host-groups в Grafana variables и panel `targets[*].group.filter`;
 - `python apply_grafana_plan.py` — dry-run/apply этого плана в Grafana;
 - `python build_impact_plan.py` — сбор change-scope по подтверждённому `mapping_plan.xlsx`;
 - `python make_backup.py` — backup строго по `impact_plan.json`;
