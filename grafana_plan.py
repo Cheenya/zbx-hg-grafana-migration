@@ -101,10 +101,10 @@ def write_grafana_plan_xlsx(data: Dict[str, Any], path: str) -> None:
     plan_ws = wb.create_sheet("PLAN")
     _append_rows(plan_ws, data.get("plan_rows") or [], GRAFANA_PLAN_HEADERS)
 
-    missing_ws = wb.create_sheet("MISSING_VARIABLES")
+    missing_ws = wb.create_sheet("REVIEW_ROWS")
     _append_rows(
         missing_ws,
-        data.get("missing_variables") or [],
+        data.get("review_rows") or data.get("missing_variables") or [],
         [
             "grafana_org_id",
             "dashboard_uid",
@@ -112,6 +112,11 @@ def write_grafana_plan_xlsx(data: Dict[str, Any], path: str) -> None:
             "dashboard_url",
             "variable_name",
             "variable_type",
+            "location_kind",
+            "field_kind",
+            "json_path",
+            "old_group",
+            "new_group",
             "status",
             "message",
         ],
@@ -375,7 +380,7 @@ def build_grafana_plan(
     api_cache: Dict[int, GrafanaAPI] = {}
     dashboard_cache: Dict[Tuple[int, str], Dict[str, Any]] = {}
     plan_rows: List[Dict[str, Any]] = []
-    missing_variables: List[Dict[str, Any]] = []
+    review_rows: List[Dict[str, Any]] = []
     seen_rows: set[tuple[str, ...]] = set()
 
     _log(log, f"grafana-plan: start variable_targets={len(variable_targets)} selected_mappings={len(mapping_rows)}")
@@ -401,7 +406,7 @@ def build_grafana_plan(
 
         variable_index, variable = _find_variable(dashboard, variable_name)
         if variable is None or variable_index is None:
-            missing_variables.append(
+            review_rows.append(
                 {
                     "grafana_org_id": str(org_id),
                     "dashboard_uid": dashboard_uid,
@@ -485,13 +490,14 @@ def build_grafana_plan(
         "selected_mappings": len(mapping_rows),
         "plan_rows": len(plan_rows),
         "manual_rows": sum(1 for row in plan_rows if str(row.get("manual_required") or "").strip()),
-        "missing_variables": len(missing_variables),
+        "review_rows": len(review_rows),
     }
     _log(log, f"grafana-plan: summary={summary}")
     return {
         "summary": summary,
         "plan_rows": plan_rows,
-        "missing_variables": missing_variables,
+        "review_rows": review_rows,
+        "missing_variables": review_rows,
     }
 
 
@@ -500,7 +506,7 @@ def build_grafana_plan_from_impact(
     log: Callable[[str], None] | None = None,
 ) -> Dict[str, Any]:
     plan_rows: List[Dict[str, Any]] = []
-    missing_variables: List[Dict[str, Any]] = []
+    review_rows: List[Dict[str, Any]] = []
     seen_rows: set[tuple[str, ...]] = set()
     grafana_rows = impact_plan.get("grafana_changes") or []
 
@@ -522,7 +528,7 @@ def build_grafana_plan_from_impact(
         change_kind = str(row.get("change_kind") or "").strip()
 
         if location_kind != "variable":
-            missing_variables.append(
+            review_rows.append(
                 {
                     "grafana_org_id": org_id,
                     "dashboard_uid": dashboard_uid,
@@ -536,7 +542,7 @@ def build_grafana_plan_from_impact(
             )
             continue
         if not variable_name or not field_path or not _is_supported_variable_field(field_path):
-            missing_variables.append(
+            review_rows.append(
                 {
                     "grafana_org_id": org_id,
                     "dashboard_uid": dashboard_uid,
@@ -550,7 +556,7 @@ def build_grafana_plan_from_impact(
             )
             continue
         if not source_value:
-            missing_variables.append(
+            review_rows.append(
                 {
                     "grafana_org_id": org_id,
                     "dashboard_uid": dashboard_uid,
@@ -566,7 +572,7 @@ def build_grafana_plan_from_impact(
 
         if change_kind == "replace_exact_string":
             if not old_group or not new_group or old_group not in source_value:
-                missing_variables.append(
+                review_rows.append(
                     {
                         "grafana_org_id": org_id,
                         "dashboard_uid": dashboard_uid,
@@ -585,7 +591,7 @@ def build_grafana_plan_from_impact(
             status = "review_regex" if manual_required else "candidate"
         elif change_kind == "review_pattern":
             if not old_group or not new_group:
-                missing_variables.append(
+                review_rows.append(
                     {
                         "grafana_org_id": org_id,
                         "dashboard_uid": dashboard_uid,
@@ -603,7 +609,7 @@ def build_grafana_plan_from_impact(
             planned_value = source_value.replace(old_group, new_group)
             status = "review_pattern"
         else:
-            missing_variables.append(
+            review_rows.append(
                 {
                     "grafana_org_id": org_id,
                     "dashboard_uid": dashboard_uid,
@@ -654,13 +660,14 @@ def build_grafana_plan_from_impact(
         "grafana_changes": len(grafana_rows),
         "plan_rows": len(plan_rows),
         "manual_rows": sum(1 for row in plan_rows if str(row.get("manual_required") or "").strip()),
-        "missing_variables": len(missing_variables),
+        "review_rows": len(review_rows),
     }
     _log(log, f"grafana-plan: summary={summary}")
     return {
         "summary": summary,
         "plan_rows": plan_rows,
-        "missing_variables": missing_variables,
+        "review_rows": review_rows,
+        "missing_variables": review_rows,
     }
 
 

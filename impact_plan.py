@@ -104,6 +104,13 @@ def write_impact_plan_xlsx(data: Dict[str, Any], path: str) -> None:
         grafana_ws.append([row.get(header, "") for header in grafana_headers])
     autosize_columns(grafana_ws)
 
+    grafana_review_ws = wb.create_sheet("GRAFANA_MANUAL_REVIEW")
+    grafana_review_headers = grafana_headers + ["status", "message"]
+    grafana_review_ws.append(grafana_review_headers)
+    for row in data.get("grafana_manual_review") or []:
+        grafana_review_ws.append([row.get(header, "") for header in grafana_review_headers])
+    autosize_columns(grafana_review_ws)
+
     backup_ws = wb.create_sheet("BACKUP_SCOPE")
     backup_ws.append(["section", "value"])
     for key, value in (data.get("backup_scope") or {}).items():
@@ -418,41 +425,51 @@ def build_impact_plan(
                 backup_user_ids.add(str(user.get("userid")))
 
     grafana_changes: List[Dict[str, Any]] = []
+    grafana_manual_review: List[Dict[str, Any]] = []
     for row in audit_report.get("grafana") or []:
         match_type = str(row.get("match_type") or "")
         matched_string = str(row.get("matched_string") or "")
+        location_kind = str(row.get("location_kind") or "")
 
         if match_type == "OLD":
             mapping = mappings_by_oldname.get(matched_string)
             if not mapping:
                 continue
-            grafana_changes.append(
-                {
-                    "grafana_org_id": str(row.get("grafana_org_id") or ""),
-                    "dashboard_uid": str(row.get("dashboard_uid") or ""),
-                    "dashboard_title": str(row.get("dashboard_title") or ""),
-                    "dashboard_url": str(row.get("dashboard_url") or ""),
-                    "panel_url": str(row.get("panel_url") or ""),
-                    "panel_id": str(row.get("panel_id") or ""),
-                    "panel_title": str(row.get("panel_title") or ""),
-                    "panel_type": str(row.get("panel_type") or ""),
-                    "variable_name": str(row.get("variable_name") or ""),
-                    "variable_type": str(row.get("variable_type") or ""),
-                    "location_kind": str(row.get("location_kind") or ""),
-                    "field_kind": str(row.get("field_kind") or ""),
-                    "reference_kind": str(row.get("reference_kind") or ""),
-                    "json_path": str(row.get("json_path") or ""),
-                    "source_text": str(row.get("source_text") or ""),
-                    "match_type": match_type,
-                    "change_kind": "replace_exact_string",
-                    "old_group": mapping["old_group"],
-                    "new_group": mapping["new_group"],
-                    "matched_string": matched_string,
-                    "pattern_key": str(row.get("pattern_key") or ""),
-                    "manual_required": "",
-                    "details": "",
-                }
-            )
+            out_row = {
+                "grafana_org_id": str(row.get("grafana_org_id") or ""),
+                "dashboard_uid": str(row.get("dashboard_uid") or ""),
+                "dashboard_title": str(row.get("dashboard_title") or ""),
+                "dashboard_url": str(row.get("dashboard_url") or ""),
+                "panel_url": str(row.get("panel_url") or ""),
+                "panel_id": str(row.get("panel_id") or ""),
+                "panel_title": str(row.get("panel_title") or ""),
+                "panel_type": str(row.get("panel_type") or ""),
+                "variable_name": str(row.get("variable_name") or ""),
+                "variable_type": str(row.get("variable_type") or ""),
+                "location_kind": location_kind,
+                "field_kind": str(row.get("field_kind") or ""),
+                "reference_kind": str(row.get("reference_kind") or ""),
+                "json_path": str(row.get("json_path") or ""),
+                "source_text": str(row.get("source_text") or ""),
+                "match_type": match_type,
+                "change_kind": "replace_exact_string",
+                "old_group": mapping["old_group"],
+                "new_group": mapping["new_group"],
+                "matched_string": matched_string,
+                "pattern_key": str(row.get("pattern_key") or ""),
+                "manual_required": "",
+                "details": "",
+            }
+            if location_kind == "variable":
+                grafana_changes.append(out_row)
+            else:
+                grafana_manual_review.append(
+                    {
+                        **out_row,
+                        "status": "unsupported_location",
+                        "message": "Non-variable Grafana matches stay in manual review and are not included in executable plan.",
+                    }
+                )
             continue
 
         if match_type != "OLD_PATTERN":
@@ -472,33 +489,41 @@ def build_impact_plan(
             new_group = ""
             details = "pattern match could not be mapped uniquely"
 
-        grafana_changes.append(
-            {
-                "grafana_org_id": str(row.get("grafana_org_id") or ""),
-                "dashboard_uid": str(row.get("dashboard_uid") or ""),
-                "dashboard_title": str(row.get("dashboard_title") or ""),
-                "dashboard_url": str(row.get("dashboard_url") or ""),
-                "panel_url": str(row.get("panel_url") or ""),
-                "panel_id": str(row.get("panel_id") or ""),
-                "panel_title": str(row.get("panel_title") or ""),
-                "panel_type": str(row.get("panel_type") or ""),
-                "variable_name": str(row.get("variable_name") or ""),
-                "variable_type": str(row.get("variable_type") or ""),
-                "location_kind": str(row.get("location_kind") or ""),
-                    "field_kind": str(row.get("field_kind") or ""),
-                    "reference_kind": str(row.get("reference_kind") or ""),
-                    "json_path": str(row.get("json_path") or ""),
-                    "source_text": str(row.get("source_text") or ""),
-                    "match_type": match_type,
-                    "change_kind": "review_pattern",
-                    "old_group": old_group,
-                "new_group": new_group,
-                "matched_string": matched_string,
-                "pattern_key": str(row.get("pattern_key") or ""),
-                "manual_required": "yes",
-                "details": details,
-            }
-        )
+        out_row = {
+            "grafana_org_id": str(row.get("grafana_org_id") or ""),
+            "dashboard_uid": str(row.get("dashboard_uid") or ""),
+            "dashboard_title": str(row.get("dashboard_title") or ""),
+            "dashboard_url": str(row.get("dashboard_url") or ""),
+            "panel_url": str(row.get("panel_url") or ""),
+            "panel_id": str(row.get("panel_id") or ""),
+            "panel_title": str(row.get("panel_title") or ""),
+            "panel_type": str(row.get("panel_type") or ""),
+            "variable_name": str(row.get("variable_name") or ""),
+            "variable_type": str(row.get("variable_type") or ""),
+            "location_kind": location_kind,
+            "field_kind": str(row.get("field_kind") or ""),
+            "reference_kind": str(row.get("reference_kind") or ""),
+            "json_path": str(row.get("json_path") or ""),
+            "source_text": str(row.get("source_text") or ""),
+            "match_type": match_type,
+            "change_kind": "review_pattern",
+            "old_group": old_group,
+            "new_group": new_group,
+            "matched_string": matched_string,
+            "pattern_key": str(row.get("pattern_key") or ""),
+            "manual_required": "yes",
+            "details": details,
+        }
+        if location_kind == "variable":
+            grafana_changes.append(out_row)
+        else:
+            grafana_manual_review.append(
+                {
+                    **out_row,
+                    "status": "unsupported_location",
+                    "message": "Non-variable Grafana matches stay in manual review and are not included in executable plan.",
+                }
+            )
 
     hostgroups_scope: List[Dict[str, str]] = []
     seen_groupids: Set[str] = set()
@@ -542,6 +567,7 @@ def build_impact_plan(
         "host_enrich_plan_rows": sum(1 for row in zabbix_changes if str(row.get("object_type") or "") == "host"),
         "object_mapping_plan_rows": sum(1 for row in zabbix_changes if str(row.get("object_type") or "") != "host"),
         "grafana_changes": len(grafana_changes),
+        "grafana_manual_review": len(grafana_manual_review),
         "backup_hostids": len(backup_scope["hostids"]),
         "backup_hostgroups": len(backup_scope["hostgroups"]),
         "backup_actions": len(backup_scope["actionids"]),
@@ -565,4 +591,5 @@ def build_impact_plan(
         "host_enrich_plan": [row for row in zabbix_changes if str(row.get("object_type") or "") == "host"],
         "object_mapping_plan": [row for row in zabbix_changes if str(row.get("object_type") or "") != "host"],
         "grafana_changes": grafana_changes,
+        "grafana_manual_review": grafana_manual_review,
     }
