@@ -169,16 +169,14 @@ def _is_group_relevant_context(json_path: str, location_kind: str, field_kind: s
     lower_name = str(variable_name or "").lower()
     if any(marker in lower_path for marker in HOST_FILTER_MARKERS):
         return False
-    if field_kind in {"query", "definition", "regex"}:
-        return True
     if location_kind == "variable":
+        if field_kind in {"query", "definition", "regex"}:
+            return True
         if field_kind in {"current", "options"} and "group" in lower_name:
             return True
-        return any(marker in lower_path for marker in GROUP_FIELD_MARKERS)
+        return False
     if location_kind == "panel":
-        return any(marker in lower_path for marker in GROUP_FIELD_MARKERS)
-    if location_kind == "dashboard":
-        return any(marker in lower_path for marker in GROUP_FIELD_MARKERS)
+        return ".targets[" in lower_path and ".group.filter" in lower_path
     return False
 
 
