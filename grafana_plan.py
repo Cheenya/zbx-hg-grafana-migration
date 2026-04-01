@@ -67,6 +67,11 @@ def load_grafana_org_report(path: str) -> Dict[str, Any]:
         return json.load(handle)
 
 
+def load_impact_plan(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def save_grafana_plan_json(data: Dict[str, Any], path: str) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(data, handle, ensure_ascii=False, indent=2)
@@ -345,6 +350,17 @@ def _is_supported_variable_field(path: str) -> bool:
     return False
 
 
+def _relative_variable_field_path(json_path: str) -> str:
+    text = str(json_path or "").strip()
+    marker = ".templating.list["
+    if marker not in text:
+        return ""
+    after = text.split(marker, 1)[1]
+    if "]." not in after:
+        return ""
+    return after.split("].", 1)[1].strip()
+
+
 def build_grafana_plan(
     conn: config.GrafanaConnection,
     org_audit_report: Dict[str, Any],
@@ -467,6 +483,175 @@ def build_grafana_plan(
         "grafana_org_ids": org_ids,
         "variable_targets": len(variable_targets),
         "selected_mappings": len(mapping_rows),
+        "plan_rows": len(plan_rows),
+        "manual_rows": sum(1 for row in plan_rows if str(row.get("manual_required") or "").strip()),
+        "missing_variables": len(missing_variables),
+    }
+    _log(log, f"grafana-plan: summary={summary}")
+    return {
+        "summary": summary,
+        "plan_rows": plan_rows,
+        "missing_variables": missing_variables,
+    }
+
+
+def build_grafana_plan_from_impact(
+    impact_plan: Dict[str, Any],
+    log: Callable[[str], None] | None = None,
+) -> Dict[str, Any]:
+    plan_rows: List[Dict[str, Any]] = []
+    missing_variables: List[Dict[str, Any]] = []
+    seen_rows: set[tuple[str, ...]] = set()
+    grafana_rows = impact_plan.get("grafana_changes") or []
+
+    _log(log, f"grafana-plan: start impact_rows={len(grafana_rows)}")
+
+    for row in grafana_rows:
+        org_id = str(row.get("grafana_org_id") or "").strip()
+        dashboard_uid = str(row.get("dashboard_uid") or "").strip()
+        dashboard_title = str(row.get("dashboard_title") or "").strip()
+        dashboard_url = str(row.get("dashboard_url") or "").strip()
+        variable_name = str(row.get("variable_name") or "").strip()
+        variable_type = str(row.get("variable_type") or "").strip()
+        location_kind = str(row.get("location_kind") or "").strip()
+        field_kind = str(row.get("field_kind") or "").strip()
+        field_path = _relative_variable_field_path(str(row.get("json_path") or ""))
+        old_group = str(row.get("old_group") or "").strip()
+        new_group = str(row.get("new_group") or "").strip()
+        source_value = str(row.get("source_text") or "")
+        change_kind = str(row.get("change_kind") or "").strip()
+
+        if location_kind != "variable":
+            missing_variables.append(
+                {
+                    "grafana_org_id": org_id,
+                    "dashboard_uid": dashboard_uid,
+                    "dashboard_title": dashboard_title,
+                    "dashboard_url": dashboard_url,
+                    "variable_name": variable_name,
+                    "variable_type": variable_type,
+                    "status": "unsupported_location",
+                    "message": "Only Grafana variable changes are executable automatically.",
+                }
+            )
+            continue
+        if not variable_name or not field_path or not _is_supported_variable_field(field_path):
+            missing_variables.append(
+                {
+                    "grafana_org_id": org_id,
+                    "dashboard_uid": dashboard_uid,
+                    "dashboard_title": dashboard_title,
+                    "dashboard_url": dashboard_url,
+                    "variable_name": variable_name,
+                    "variable_type": variable_type,
+                    "status": "unsupported_field",
+                    "message": f"Unsupported variable field path: {field_path or str(row.get('json_path') or '')}",
+                }
+            )
+            continue
+        if not source_value:
+            missing_variables.append(
+                {
+                    "grafana_org_id": org_id,
+                    "dashboard_uid": dashboard_uid,
+                    "dashboard_title": dashboard_title,
+                    "dashboard_url": dashboard_url,
+                    "variable_name": variable_name,
+                    "variable_type": variable_type,
+                    "status": "empty_source_value",
+                    "message": "Impact plan row does not contain source_text.",
+                }
+            )
+            continue
+
+        if change_kind == "replace_exact_string":
+            if not old_group or not new_group or old_group not in source_value:
+                missing_variables.append(
+                    {
+                        "grafana_org_id": org_id,
+                        "dashboard_uid": dashboard_uid,
+                        "dashboard_title": dashboard_title,
+                        "dashboard_url": dashboard_url,
+                        "variable_name": variable_name,
+                        "variable_type": variable_type,
+                        "status": "invalid_exact_change",
+                        "message": "Exact Grafana change is missing old/new group or old group is absent in source_text.",
+                    }
+                )
+                continue
+            change_mode = "manual_regex" if _is_manual_change_mode(field_kind) else "exact"
+            manual_required = "yes" if change_mode == "manual_regex" else str(row.get("manual_required") or "")
+            planned_value = source_value.replace(old_group, new_group)
+            status = "review_regex" if manual_required else "candidate"
+        elif change_kind == "review_pattern":
+            if not old_group or not new_group:
+                missing_variables.append(
+                    {
+                        "grafana_org_id": org_id,
+                        "dashboard_uid": dashboard_uid,
+                        "dashboard_title": dashboard_title,
+                        "dashboard_url": dashboard_url,
+                        "variable_name": variable_name,
+                        "variable_type": variable_type,
+                        "status": "unresolved_pattern",
+                        "message": "Pattern row is not mapped uniquely in impact plan.",
+                    }
+                )
+                continue
+            change_mode = "manual_regex"
+            manual_required = "yes"
+            planned_value = source_value.replace(old_group, new_group)
+            status = "review_pattern"
+        else:
+            missing_variables.append(
+                {
+                    "grafana_org_id": org_id,
+                    "dashboard_uid": dashboard_uid,
+                    "dashboard_title": dashboard_title,
+                    "dashboard_url": dashboard_url,
+                    "variable_name": variable_name,
+                    "variable_type": variable_type,
+                    "status": "unsupported_change_kind",
+                    "message": f"Unsupported Grafana change_kind: {change_kind}",
+                }
+            )
+            continue
+
+        row_key = (org_id, dashboard_uid, variable_name, field_path, old_group, new_group)
+        if row_key in seen_rows:
+            continue
+        seen_rows.add(row_key)
+        plan_rows.append(
+            {
+                "apply": "",
+                "grafana_org_id": org_id,
+                "dashboard_uid": dashboard_uid,
+                "dashboard_title": dashboard_title,
+                "folder_title": str(row.get("folder_title") or ""),
+                "dashboard_url": dashboard_url,
+                "variable_name": variable_name,
+                "variable_type": variable_type,
+                "datasource_names": str(row.get("datasource_names") or ""),
+                "field_path": field_path,
+                "field_kind": field_kind,
+                "old_group": old_group,
+                "new_group": new_group,
+                "replace_count": source_value.count(old_group) if old_group else 0,
+                "source_value": source_value,
+                "planned_value": planned_value,
+                "change_kind": change_kind,
+                "change_mode": change_mode,
+                "manual_required": manual_required,
+                "status": status,
+                "comment": "",
+            }
+        )
+
+    summary = {
+        "scope_as": (impact_plan.get("summary") or {}).get("scope_as") or [],
+        "scope_env": str((impact_plan.get("summary") or {}).get("scope_env") or "").strip(),
+        "scope_gas": (impact_plan.get("summary") or {}).get("scope_gas") or [],
+        "grafana_changes": len(grafana_rows),
         "plan_rows": len(plan_rows),
         "manual_rows": sum(1 for row in plan_rows if str(row.get("manual_required") or "").strip()),
         "missing_variables": len(missing_variables),

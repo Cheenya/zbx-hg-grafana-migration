@@ -6,8 +6,13 @@ from datetime import datetime
 
 import config
 from common import build_org_artifact_path, normalize_values, resolve_input_artifact
-from grafana_plan import apply_grafana_plan, get_selected_grafana_changes, load_grafana_plan_rows, write_grafana_apply_xlsx
-from mapping_plan import get_selected_mappings, load_mapping_plan_rows
+from grafana_plan import (
+    apply_grafana_plan,
+    get_selected_grafana_changes,
+    load_grafana_plan_rows,
+    load_impact_plan,
+    write_grafana_apply_xlsx,
+)
 
 
 def main() -> int:
@@ -23,19 +28,20 @@ def main() -> int:
         org_ids=config.GRAFANA_AUDIT_ORGIDS,
         label="Grafana plan XLSX",
     )
-    mapping_plan_path = resolve_input_artifact(
-        config.SOURCE_MAPPING_PLAN_XLSX,
-        config.MAPPING_PLAN_PREFIX,
-        ".xlsx",
+    impact_plan_path = resolve_input_artifact(
+        config.SOURCE_IMPACT_PLAN_JSON,
+        config.IMPACT_PLAN_PREFIX,
+        ".json",
         scope_as=config.SCOPE_AS,
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
-        label="mapping plan XLSX",
+        label="impact plan JSON",
     )
 
     plan_rows = load_grafana_plan_rows(plan_path)
     selected_rows = get_selected_grafana_changes(plan_rows)
-    selected_mappings = get_selected_mappings(load_mapping_plan_rows(mapping_plan_path))
+    impact_plan = load_impact_plan(impact_plan_path)
+    selected_mappings = list(impact_plan.get("selected_mappings") or [])
     org_ids = [int(value) for value in normalize_values(sorted({row["grafana_org_id"] for row in selected_rows}))]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_xlsx = args.out_xlsx or build_org_artifact_path(config.GRAFANA_APPLY_PREFIX, org_ids, ".xlsx", timestamp=timestamp)
@@ -45,10 +51,10 @@ def main() -> int:
     connection = config.load_grafana_connection()
     if not str(config.SOURCE_GRAFANA_PLAN_XLSX or "").strip():
         print(f"Using latest Grafana plan XLSX: {plan_path}")
-    if not str(config.SOURCE_MAPPING_PLAN_XLSX or "").strip():
-        print(f"Using latest mapping plan XLSX: {mapping_plan_path}")
+    if not str(config.SOURCE_IMPACT_PLAN_JSON or "").strip():
+        print(f"Using latest impact plan JSON: {impact_plan_path}")
     print(f"Applying Grafana plan from: {plan_path}")
-    print(f"Validating against mapping plan: {mapping_plan_path}")
+    print(f"Validating against impact plan: {impact_plan_path}")
     print(f"Mode: {'DRY-RUN' if dry_run else 'APPLY'}")
     data = apply_grafana_plan(connection, selected_rows, selected_mappings, dry_run=dry_run, log=print)
 

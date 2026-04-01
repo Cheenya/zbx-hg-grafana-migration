@@ -19,12 +19,11 @@ from grafana_plan import (
     load_grafana_plan_rows,
     write_grafana_apply_xlsx,
 )
-from mapping_plan import get_selected_mappings, load_mapping_plan_rows
 
 
 def _confirm(prompt: str) -> bool:
-    answer = input(f"{prompt} [y/N]: ").strip().lower()
-    return answer in {"y", "yes", "да", "д"}
+    answer = input(f"{prompt} (yes/no): ").strip().lower()
+    return answer in {"yes", "да"}
 
 
 def _zabbix_preview(impact_plan: Dict[str, Any]) -> Dict[str, Any]:
@@ -100,56 +99,69 @@ def main() -> int:
     zbx_scope_gas: List[str] = []
 
     plan_path = ""
-    mapping_plan_path = ""
     selected_grafana_rows: List[Dict[str, str]] = []
     selected_mappings: List[Dict[str, str]] = []
     graf_preview: Dict[str, Any] | None = None
 
     if "zabbix" in targets:
-        impact_plan_path = resolve_input_artifact(
-            config.SOURCE_IMPACT_PLAN_JSON,
-            config.IMPACT_PLAN_PREFIX,
-            ".json",
-            scope_as=config.SCOPE_AS,
-            scope_env=config.SCOPE_ENV,
-            scope_gas=config.SCOPE_GAS,
-            label="impact plan JSON",
-        )
+        try:
+            impact_plan_path = resolve_input_artifact(
+                config.SOURCE_IMPACT_PLAN_JSON,
+                config.IMPACT_PLAN_PREFIX,
+                ".json",
+                scope_as=config.SCOPE_AS,
+                scope_env=config.SCOPE_ENV,
+                scope_gas=config.SCOPE_GAS,
+                label="impact plan JSON",
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(f"{exc}. Run `python build_impact_plan.py` first.") from exc
         impact_plan = load_impact_plan(impact_plan_path)
         zbx_preview = _zabbix_preview(impact_plan)
         zbx_scope_as = normalize_values((impact_plan.get("summary") or {}).get("scope_as") or [])
         zbx_scope_env = str((impact_plan.get("summary") or {}).get("scope_env") or "").strip()
         zbx_scope_gas = normalize_values((impact_plan.get("summary") or {}).get("scope_gas") or [])
         if not dry_run:
-            backup_path = resolve_input_artifact(
-                config.SOURCE_BACKUP_FILE,
-                config.BACKUP_PREFIX,
-                ".json.gz",
-                scope_as=zbx_scope_as,
-                scope_env=zbx_scope_env,
-                scope_gas=zbx_scope_gas,
-                label="backup file",
-            )
+            try:
+                backup_path = resolve_input_artifact(
+                    config.SOURCE_BACKUP_FILE,
+                    config.BACKUP_PREFIX,
+                    ".json.gz",
+                    scope_as=zbx_scope_as,
+                    scope_env=zbx_scope_env,
+                    scope_gas=zbx_scope_gas,
+                    label="backup file",
+                )
+            except RuntimeError as exc:
+                raise RuntimeError(f"{exc}. Run `python make_backup.py` and `python verify_backup.py` first.") from exc
 
     if "grafana" in targets:
-        plan_path = resolve_input_artifact(
-            config.SOURCE_GRAFANA_PLAN_XLSX,
-            config.GRAFANA_PLAN_PREFIX,
-            ".xlsx",
-            org_ids=config.GRAFANA_AUDIT_ORGIDS,
-            label="Grafana plan XLSX",
-        )
-        mapping_plan_path = resolve_input_artifact(
-            config.SOURCE_MAPPING_PLAN_XLSX,
-            config.MAPPING_PLAN_PREFIX,
-            ".xlsx",
-            scope_as=config.SCOPE_AS,
-            scope_env=config.SCOPE_ENV,
-            scope_gas=config.SCOPE_GAS,
-            label="mapping plan XLSX",
-        )
+        if impact_plan is None:
+            try:
+                impact_plan_path = resolve_input_artifact(
+                    config.SOURCE_IMPACT_PLAN_JSON,
+                    config.IMPACT_PLAN_PREFIX,
+                    ".json",
+                    scope_as=config.SCOPE_AS,
+                    scope_env=config.SCOPE_ENV,
+                    scope_gas=config.SCOPE_GAS,
+                    label="impact plan JSON",
+                )
+            except RuntimeError as exc:
+                raise RuntimeError(f"{exc}. Run `python build_impact_plan.py` first.") from exc
+            impact_plan = load_impact_plan(impact_plan_path)
+        try:
+            plan_path = resolve_input_artifact(
+                config.SOURCE_GRAFANA_PLAN_XLSX,
+                config.GRAFANA_PLAN_PREFIX,
+                ".xlsx",
+                org_ids=config.GRAFANA_AUDIT_ORGIDS,
+                label="Grafana plan XLSX",
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(f"{exc}. Run `python build_grafana_plan.py` after `python build_impact_plan.py`.") from exc
         selected_grafana_rows = get_selected_grafana_changes(load_grafana_plan_rows(plan_path))
-        selected_mappings = get_selected_mappings(load_mapping_plan_rows(mapping_plan_path))
+        selected_mappings = list((impact_plan or {}).get("selected_mappings") or [])
         graf_preview = _grafana_preview(selected_grafana_rows)
 
     _print_preview(targets, zbx_preview, graf_preview, "APPLY" if not dry_run else "DRY-RUN")
@@ -181,8 +193,8 @@ def main() -> int:
     if "grafana" in targets:
         connection = config.load_grafana_connection()
         print(f"Running Grafana {'apply' if not dry_run else 'dry-run'} from: {plan_path}")
-        if mapping_plan_path:
-            print(f"Validating Grafana plan against mapping: {mapping_plan_path}")
+        if impact_plan_path:
+            print(f"Validating Grafana plan against impact plan: {impact_plan_path}")
         graf_result = apply_grafana_plan(connection, selected_grafana_rows, selected_mappings, dry_run=dry_run, log=print)
         org_ids = [int(value) for value in normalize_values(sorted({row['grafana_org_id'] for row in selected_grafana_rows}))]
         graf_out_xlsx = build_org_artifact_path(config.GRAFANA_APPLY_PREFIX, org_ids, ".xlsx", timestamp=timestamp)

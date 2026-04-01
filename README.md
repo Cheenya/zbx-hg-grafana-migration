@@ -62,16 +62,12 @@
   - `grafana_org_audit_*.json`
   - `grafana_org_audit_log_*.log`
 
+Это диагностический контур. В apply-цепочке Grafana он сам по себе больше не обязателен.
+
 Что делает `build_grafana_plan.py`:
-- читает `SOURCE_GRAFANA_ORG_JSON`;
-- читает `SOURCE_MAPPING_PLAN_XLSX`;
-- берёт только `selected=yes` из mapping plan;
-- находит в Grafana variables поля со старыми host-group именами:
-  - `query`
-  - `regex`
-  - `definition`
-  - `current.*`
-  - `options[*].*`
+- читает `SOURCE_IMPACT_PLAN_JSON`;
+- берёт `grafana_changes` из `impact_plan.json`;
+- строит исполняемый план только для Grafana variables;
 - делит строки на режимы:
   - `exact` — жёстко производные от Zabbix mapping;
   - `manual_regex` — ручные regex/query случаи;
@@ -81,7 +77,7 @@
 
 Что делает `apply_grafana_plan.py`:
 - читает `SOURCE_GRAFANA_PLAN_XLSX`;
-- валидирует строки против `SOURCE_MAPPING_PLAN_XLSX`;
+- валидирует строки против `SOURCE_IMPACT_PLAN_JSON`;
 - берёт только строки, где `apply=yes`;
 - по умолчанию работает как dry-run;
 - если `GRAFANA_APPLY_CHANGES = True`, реально обновляет dashboard variables через Grafana API;
@@ -100,6 +96,7 @@
 - раскладывает Zabbix-изменения на:
   - `HOST_ENRICH_PLAN`
   - `OBJECT_MAPPING_PLAN`
+- для `usergroups` планирует только добавление недостающих permissions на новые группы, без удаления old rights;
 - сохраняет:
   - `impact_plan_v2_*.xlsx`
   - `impact_plan_v2_*.json`
@@ -180,10 +177,8 @@
 4. Если нужен отдельный разбор Grafana:
    - задать `GRAFANA_AUDIT_ORGIDS`
    - запустить `python grafana_org_audit.py`
-   - указать `SOURCE_GRAFANA_ORG_JSON`
    - запустить `python build_grafana_plan.py`
    - отметить `apply=yes` в `grafana_plan_*.xlsx`
-   - держать `GRAFANA_APPLY_CHANGES = False` для dry-run
    - запустить `python apply_grafana_plan.py`
 5. В `config.py` указать:
    - `SOURCE_AUDIT_JSON`

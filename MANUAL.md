@@ -224,9 +224,9 @@ SOURCE_GRAFANA_PLAN_XLSX = ""
 
 Использование:
 - `SOURCE_AUDIT_JSON` — вход для `build_impact_plan.py`;
-- `SOURCE_GRAFANA_ORG_JSON` — вход для `build_grafana_plan.py`;
+- `SOURCE_GRAFANA_ORG_JSON` — явный override пути для `grafana_org_audit.py`;
 - `SOURCE_MAPPING_PLAN_XLSX` — вход для `build_impact_plan.py`;
-- `SOURCE_IMPACT_PLAN_JSON` — вход для `make_backup.py` и `verify_backup.py`;
+- `SOURCE_IMPACT_PLAN_JSON` — вход для `build_grafana_plan.py`, `make_backup.py` и `verify_backup.py`;
 - `SOURCE_BACKUP_FILE` — вход для `verify_backup.py`, `apply_zabbix_plan.py` и `restore_backup.py`.
 - `SOURCE_GRAFANA_PLAN_XLSX` — вход для `apply_grafana_plan.py`.
 
@@ -403,15 +403,13 @@ MAPPING_FORBID_ENV_MISMATCH = True
 ### 5.4. Что делает `build_grafana_plan.py`
 
 Вход:
-- `SOURCE_GRAFANA_ORG_JSON`
-- `SOURCE_MAPPING_PLAN_XLSX`
+- `SOURCE_IMPACT_PLAN_JSON`
 
 Шаги:
-1. Читает org-level Grafana audit json.
-2. Читает `mapping_plan.xlsx`.
-3. Берёт только строки с `selected=yes`.
-4. По live dashboard JSON находит в variables все строковые поля, где встречаются выбранные `old_group`.
-5. Строит план изменений для:
+1. Читает `impact_plan.json`.
+2. Берёт из него `grafana_changes`.
+3. Оставляет только исполняемые variable-level строки.
+4. Строит план изменений для:
    - `query`
    - `regex`
    - `definition`
@@ -419,12 +417,14 @@ MAPPING_FORBID_ENV_MISMATCH = True
    - `current.value`
    - `options[*].text`
    - `options[*].value`
-6. Делит изменения на режимы:
-   - `exact` — строка должна оставаться полностью производной от `mapping_plan.xlsx`;
-   - `manual_regex` — допускается ручной `planned_value`, но только для пары из `mapping_plan.xlsx`.
-7. Пишет:
+5. Делит изменения на режимы:
+   - `exact` — строка должна оставаться полностью производной от `impact_plan`;
+   - `manual_regex` — допускается ручной `planned_value` для regex/query случаев.
+6. Пишет:
    - `grafana_plan_*.xlsx`
    - `grafana_plan_*.json`
+
+`grafana_org_audit.py` остаётся диагностическим инструментом и не является обязательным шагом для apply.
 
 Главный лист:
 - `PLAN`
@@ -444,14 +444,15 @@ MAPPING_FORBID_ENV_MISMATCH = True
 
 Вход:
 - `SOURCE_GRAFANA_PLAN_XLSX`
+- `SOURCE_IMPACT_PLAN_JSON`
 
 Шаги:
 1. Читает `PLAN`.
-2. Валидирует каждую строку против `mapping_plan.xlsx`.
+2. Валидирует каждую строку против `impact_plan.json`.
 3. Берёт только строки с `apply=yes`.
 4. По умолчанию работает как dry-run.
 5. Для `exact` требует, чтобы `planned_value` оставался строго производным от `source_value` и пары `OLD -> NEW`.
-6. Для `manual_regex` допускает ручной `planned_value`, но только если пара существует в `mapping_plan.xlsx`.
+6. Для `manual_regex` допускает ручной `planned_value`, но только если пара существует в `impact_plan.selected_mappings`.
 7. Если `GRAFANA_APPLY_CHANGES = True`, реально обновляет dashboards через Grafana API.
 8. Пишет:
    - `grafana_apply_*.xlsx`
@@ -669,8 +670,7 @@ python build_impact_plan.py
 Если нужно подготовить замену old/new host-groups в Grafana variables:
 
 ```python
-SOURCE_GRAFANA_ORG_JSON = r"v2_output\\grafana_org_audit_....json"
-SOURCE_MAPPING_PLAN_XLSX = r"v2_output\\mapping_plan_v2_....xlsx"
+SOURCE_IMPACT_PLAN_JSON = r"v2_output\\impact_plan_v2_....json"
 ```
 
 ```bash

@@ -94,6 +94,7 @@ def write_impact_plan_xlsx(data: Dict[str, Any], path: str) -> None:
         "old_group",
         "new_group",
         "matched_string",
+        "source_text",
         "pattern_key",
         "manual_required",
         "details",
@@ -299,24 +300,51 @@ def build_impact_plan(
         usergroup_id = str(usergroup.get("usrgrpid") or "")
         usergroup_name = str(usergroup.get("name") or "")
         changed = False
+        existing_rights_by_groupid = {
+            str((right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")).strip(): str(right.get("permission") or "")
+            for right in (usergroup.get("hostgroup_rights") or [])
+            if str((right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")).strip()
+        }
         for index, right in enumerate(usergroup.get("hostgroup_rights") or []):
             group_id = str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")
             mapping = mappings_by_oldid.get(group_id)
             if not mapping:
+                continue
+            new_groupid = str(mapping["new_groupid"] or "").strip()
+            old_permission = str(right.get("permission") or "")
+            existing_new_permission = str(existing_rights_by_groupid.get(new_groupid) or "")
+            if existing_new_permission:
+                if existing_new_permission != old_permission:
+                    zabbix_changes.append(
+                        {
+                            "object_type": "usergroup",
+                            "object_id": usergroup_id,
+                            "object_name": usergroup_name,
+                            "field_path": f"hostgroup_rights[{index}]",
+                            "change_kind": "manual_review_permission",
+                            "old_group": mapping["old_group"],
+                            "old_groupid": mapping["old_groupid"],
+                            "new_group": mapping["new_group"],
+                            "new_groupid": new_groupid,
+                            "manual_required": "yes",
+                            "details": f"old_permission={old_permission}; new_permission={existing_new_permission}",
+                        }
+                    )
+                    changed = True
                 continue
             zabbix_changes.append(
                 {
                     "object_type": "usergroup",
                     "object_id": usergroup_id,
                     "object_name": usergroup_name,
-                    "field_path": f"hostgroup_rights[{index}].groupid",
-                    "change_kind": "replace_groupid",
+                    "field_path": "hostgroup_rights[+]",
+                    "change_kind": "add_group_permission",
                     "old_group": mapping["old_group"],
                     "old_groupid": mapping["old_groupid"],
                     "new_group": mapping["new_group"],
-                    "new_groupid": mapping["new_groupid"],
+                    "new_groupid": new_groupid,
                     "manual_required": "",
-                    "details": f"permission={right.get('permission')}",
+                    "details": f"permission={old_permission}",
                 }
             )
             changed = True
@@ -414,6 +442,7 @@ def build_impact_plan(
                     "field_kind": str(row.get("field_kind") or ""),
                     "reference_kind": str(row.get("reference_kind") or ""),
                     "json_path": str(row.get("json_path") or ""),
+                    "source_text": str(row.get("source_text") or ""),
                     "match_type": match_type,
                     "change_kind": "replace_exact_string",
                     "old_group": mapping["old_group"],
@@ -456,12 +485,13 @@ def build_impact_plan(
                 "variable_name": str(row.get("variable_name") or ""),
                 "variable_type": str(row.get("variable_type") or ""),
                 "location_kind": str(row.get("location_kind") or ""),
-                "field_kind": str(row.get("field_kind") or ""),
-                "reference_kind": str(row.get("reference_kind") or ""),
-                "json_path": str(row.get("json_path") or ""),
-                "match_type": match_type,
-                "change_kind": "review_pattern",
-                "old_group": old_group,
+                    "field_kind": str(row.get("field_kind") or ""),
+                    "reference_kind": str(row.get("reference_kind") or ""),
+                    "json_path": str(row.get("json_path") or ""),
+                    "source_text": str(row.get("source_text") or ""),
+                    "match_type": match_type,
+                    "change_kind": "review_pattern",
+                    "old_group": old_group,
                 "new_group": new_group,
                 "matched_string": matched_string,
                 "pattern_key": str(row.get("pattern_key") or ""),
@@ -494,7 +524,7 @@ def build_impact_plan(
         hostgroups_scope.append({"groupid": group_id, "name": group_name, "kind": str(row.get("group_kind") or "STANDARD")})
 
     backup_scope = {
-        "hostids": sorted({str(item).strip() for item in (inventory.get("hostids") or []) if str(item).strip()}),
+        "hostids": sorted(impacted_host_ids),
         "hostgroups": sorted(hostgroups_scope, key=lambda item: (item["kind"], item["name"].lower())),
         "actionids": sorted(impacted_action_ids),
         "usergroupids": sorted(backup_usergroup_ids),
