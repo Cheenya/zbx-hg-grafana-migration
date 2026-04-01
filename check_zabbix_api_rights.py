@@ -51,9 +51,19 @@ def _probe_method(api: ZabbixAPI, method: str) -> Dict[str, str]:
 
 def _get_auth_info(api: ZabbixAPI) -> Dict[str, Any]:
     if getattr(api, "api_token", ""):
-        auth_info = api.call("user.checkAuthentication", {"token": api.api_token, "extend": False})
+        auth_info = api.call(
+            "user.checkAuthentication",
+            {"token": api.api_token, "extend": False},
+            include_auth=False,
+            include_bearer=False,
+        )
     else:
-        auth_info = api.call("user.checkAuthentication", {"sessionid": api.auth, "extend": False})
+        auth_info = api.call(
+            "user.checkAuthentication",
+            {"sessionid": api.auth, "extend": False},
+            include_auth=False,
+            include_bearer=False,
+        )
 
     userid = str(auth_info.get("userid") or "").strip()
     user_row: Dict[str, Any] = {}

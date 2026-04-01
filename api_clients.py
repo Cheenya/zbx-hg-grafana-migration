@@ -23,7 +23,14 @@ class ZabbixAPI:
         self.api_token: str = ""
         self._id = 1
 
-    def call(self, method: str, params: Dict[str, Any]) -> Any:
+    def call(
+        self,
+        method: str,
+        params: Dict[str, Any],
+        *,
+        include_auth: bool = True,
+        include_bearer: bool = True,
+    ) -> Any:
         payload: Dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": method,
@@ -31,10 +38,10 @@ class ZabbixAPI:
             "id": self._id,
         }
         self._id += 1
-        if self.auth is not None:
+        if include_auth and self.auth is not None:
             payload["auth"] = self.auth
         headers = None
-        if self.api_token:
+        if include_bearer and self.api_token:
             headers = {"Authorization": f"Bearer {self.api_token}"}
 
         try:
