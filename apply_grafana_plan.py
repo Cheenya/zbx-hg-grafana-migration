@@ -16,7 +16,7 @@ from grafana_plan import (
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Apply Grafana variable migration plan")
+    parser = argparse.ArgumentParser(description="Apply Grafana migration plan")
     parser.add_argument("--out-xlsx", dest="out_xlsx", help="Path to Grafana apply XLSX")
     parser.add_argument("--out-json", dest="out_json", help="Path to Grafana apply JSON")
     args = parser.parse_args()

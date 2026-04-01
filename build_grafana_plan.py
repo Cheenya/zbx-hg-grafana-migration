@@ -9,7 +9,7 @@ from grafana_plan import build_grafana_plan_from_impact, load_impact_plan, save_
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build Grafana variable migration plan from impact plan")
+    parser = argparse.ArgumentParser(description="Build Grafana migration plan from impact plan")
     parser.add_argument("--out-xlsx", dest="out_xlsx", help="Path to Grafana plan XLSX")
     parser.add_argument("--out-json", dest="out_json", help="Path to Grafana plan JSON")
     args = parser.parse_args()

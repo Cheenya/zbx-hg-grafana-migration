@@ -22,10 +22,16 @@ GRAFANA_PLAN_HEADERS: List[str] = [
     "dashboard_title",
     "folder_title",
     "dashboard_url",
+    "panel_url",
+    "panel_id",
+    "panel_title",
+    "panel_type",
+    "location_kind",
     "variable_name",
     "variable_type",
     "datasource_names",
     "field_path",
+    "json_path",
     "field_kind",
     "old_group",
     "new_group",
@@ -44,8 +50,14 @@ GRAFANA_APPLY_RESULT_HEADERS: List[str] = [
     "dashboard_uid",
     "dashboard_title",
     "dashboard_url",
+    "panel_url",
+    "panel_id",
+    "panel_title",
+    "panel_type",
+    "location_kind",
     "variable_name",
     "field_path",
+    "json_path",
     "field_kind",
     "old_group",
     "new_group",
@@ -186,20 +198,27 @@ def get_selected_grafana_changes(rows: Sequence[Dict[str, Any]]) -> List[Dict[st
             continue
         grafana_org_id = str(row.get("grafana_org_id") or "").strip()
         dashboard_uid = str(row.get("dashboard_uid") or "").strip()
+        location_kind = str(row.get("location_kind") or "").strip()
         variable_name = str(row.get("variable_name") or "").strip()
         field_path = str(row.get("field_path") or "").strip()
         old_group = str(row.get("old_group") or "").strip()
         new_group = str(row.get("new_group") or "").strip()
-        if not all([grafana_org_id, dashboard_uid, variable_name, field_path, old_group, new_group]):
-            raise RuntimeError("Selected Grafana plan row must contain org_id, dashboard_uid, variable_name, field_path, old_group, new_group.")
+        if not all([grafana_org_id, dashboard_uid, location_kind, field_path, old_group, new_group]):
+            raise RuntimeError("Selected Grafana plan row must contain org_id, dashboard_uid, location_kind, field_path, old_group, new_group.")
         selected.append(
             {
                 "grafana_org_id": grafana_org_id,
                 "dashboard_uid": dashboard_uid,
                 "dashboard_title": str(row.get("dashboard_title") or "").strip(),
                 "dashboard_url": str(row.get("dashboard_url") or "").strip(),
+                "panel_url": str(row.get("panel_url") or "").strip(),
+                "panel_id": str(row.get("panel_id") or "").strip(),
+                "panel_title": str(row.get("panel_title") or "").strip(),
+                "panel_type": str(row.get("panel_type") or "").strip(),
+                "location_kind": location_kind,
                 "variable_name": variable_name,
                 "field_path": field_path,
+                "json_path": str(row.get("json_path") or "").strip(),
                 "field_kind": str(row.get("field_kind") or "").strip(),
                 "old_group": old_group,
                 "new_group": new_group,
@@ -344,26 +363,37 @@ def _collect_variable_targets(org_audit_report: Dict[str, Any]) -> List[Dict[str
     return list(targets.values())
 
 
-def _is_supported_variable_field(path: str) -> bool:
-    text = str(path or "").strip()
-    if text in {"query", "regex", "definition"}:
-        return True
-    if text.startswith("current."):
-        return True
-    if text.startswith("options["):
-        return True
-    return False
-
-
-def _relative_variable_field_path(json_path: str) -> str:
+def _root_relative_field_path(json_path: str) -> str:
     text = str(json_path or "").strip()
-    marker = ".templating.list["
-    if marker not in text:
+    if text.startswith("dashboard."):
+        return text[len("dashboard.") :]
+    if text == "dashboard":
         return ""
-    after = text.split(marker, 1)[1]
-    if "]." not in after:
-        return ""
-    return after.split("].", 1)[1].strip()
+    return text
+
+
+def _is_supported_plan_field(location_kind: str, json_path: str, field_kind: str) -> bool:
+    lower_path = str(json_path or "").lower()
+    lower_kind = str(field_kind or "").strip().lower()
+    if any(marker in lower_path for marker in (".host.filter", ".hosts.filter", ".host_filter", ".hosts_filter")):
+        return False
+    if lower_kind in {"query", "definition", "regex", "expression", "sql"}:
+        return True
+    return any(
+        marker in lower_path
+        for marker in (
+            ".group",
+            ".groups",
+            ".groupby",
+            ".group_by",
+            ".groupfilter",
+            ".group_filter",
+            ".filter",
+            ".filters",
+            ".current.",
+            ".options[",
+        )
+    )
 
 
 def build_grafana_plan(
@@ -508,7 +538,7 @@ def build_grafana_plan_from_impact(
     plan_rows: List[Dict[str, Any]] = []
     review_rows: List[Dict[str, Any]] = []
     seen_rows: set[tuple[str, ...]] = set()
-    grafana_rows = impact_plan.get("grafana_changes") or []
+    grafana_rows = list(impact_plan.get("grafana_changes") or []) + list(impact_plan.get("grafana_manual_review") or [])
 
     _log(log, f"grafana-plan: start impact_rows={len(grafana_rows)}")
 
@@ -517,53 +547,61 @@ def build_grafana_plan_from_impact(
         dashboard_uid = str(row.get("dashboard_uid") or "").strip()
         dashboard_title = str(row.get("dashboard_title") or "").strip()
         dashboard_url = str(row.get("dashboard_url") or "").strip()
+        panel_url = str(row.get("panel_url") or "").strip()
+        panel_id = str(row.get("panel_id") or "").strip()
+        panel_title = str(row.get("panel_title") or "").strip()
+        panel_type = str(row.get("panel_type") or "").strip()
         variable_name = str(row.get("variable_name") or "").strip()
         variable_type = str(row.get("variable_type") or "").strip()
         location_kind = str(row.get("location_kind") or "").strip()
         field_kind = str(row.get("field_kind") or "").strip()
-        field_path = _relative_variable_field_path(str(row.get("json_path") or ""))
+        json_path = str(row.get("json_path") or "").strip()
+        field_path = _root_relative_field_path(json_path)
         old_group = str(row.get("old_group") or "").strip()
         new_group = str(row.get("new_group") or "").strip()
         source_value = str(row.get("source_text") or "")
         change_kind = str(row.get("change_kind") or "").strip()
 
-        if location_kind != "variable":
+        base_review = {
+            "grafana_org_id": org_id,
+            "dashboard_uid": dashboard_uid,
+            "dashboard_title": dashboard_title,
+            "dashboard_url": dashboard_url,
+            "panel_url": panel_url,
+            "panel_id": panel_id,
+            "panel_title": panel_title,
+            "panel_type": panel_type,
+            "location_kind": location_kind,
+            "variable_name": variable_name,
+            "variable_type": variable_type,
+            "field_kind": field_kind,
+            "json_path": json_path,
+            "old_group": old_group,
+            "new_group": new_group,
+        }
+
+        if location_kind not in {"variable", "panel", "dashboard"}:
             review_rows.append(
                 {
-                    "grafana_org_id": org_id,
-                    "dashboard_uid": dashboard_uid,
-                    "dashboard_title": dashboard_title,
-                    "dashboard_url": dashboard_url,
-                    "variable_name": variable_name,
-                    "variable_type": variable_type,
+                    **base_review,
                     "status": "unsupported_location",
-                    "message": "Only Grafana variable changes are executable automatically.",
+                    "message": "Unsupported Grafana location_kind for automatic apply.",
                 }
             )
             continue
-        if not variable_name or not field_path or not _is_supported_variable_field(field_path):
+        if not field_path or not _is_supported_plan_field(location_kind, json_path, field_kind):
             review_rows.append(
                 {
-                    "grafana_org_id": org_id,
-                    "dashboard_uid": dashboard_uid,
-                    "dashboard_title": dashboard_title,
-                    "dashboard_url": dashboard_url,
-                    "variable_name": variable_name,
-                    "variable_type": variable_type,
+                    **base_review,
                     "status": "unsupported_field",
-                    "message": f"Unsupported variable field path: {field_path or str(row.get('json_path') or '')}",
+                    "message": f"Unsupported Grafana field path for automatic apply: {field_path or json_path}",
                 }
             )
             continue
         if not source_value:
             review_rows.append(
                 {
-                    "grafana_org_id": org_id,
-                    "dashboard_uid": dashboard_uid,
-                    "dashboard_title": dashboard_title,
-                    "dashboard_url": dashboard_url,
-                    "variable_name": variable_name,
-                    "variable_type": variable_type,
+                    **base_review,
                     "status": "empty_source_value",
                     "message": "Impact plan row does not contain source_text.",
                 }
@@ -574,12 +612,7 @@ def build_grafana_plan_from_impact(
             if not old_group or not new_group or old_group not in source_value:
                 review_rows.append(
                     {
-                        "grafana_org_id": org_id,
-                        "dashboard_uid": dashboard_uid,
-                        "dashboard_title": dashboard_title,
-                        "dashboard_url": dashboard_url,
-                        "variable_name": variable_name,
-                        "variable_type": variable_type,
+                        **base_review,
                         "status": "invalid_exact_change",
                         "message": "Exact Grafana change is missing old/new group or old group is absent in source_text.",
                     }
@@ -593,12 +626,7 @@ def build_grafana_plan_from_impact(
             if not old_group or not new_group:
                 review_rows.append(
                     {
-                        "grafana_org_id": org_id,
-                        "dashboard_uid": dashboard_uid,
-                        "dashboard_title": dashboard_title,
-                        "dashboard_url": dashboard_url,
-                        "variable_name": variable_name,
-                        "variable_type": variable_type,
+                        **base_review,
                         "status": "unresolved_pattern",
                         "message": "Pattern row is not mapped uniquely in impact plan.",
                     }
@@ -611,19 +639,14 @@ def build_grafana_plan_from_impact(
         else:
             review_rows.append(
                 {
-                    "grafana_org_id": org_id,
-                    "dashboard_uid": dashboard_uid,
-                    "dashboard_title": dashboard_title,
-                    "dashboard_url": dashboard_url,
-                    "variable_name": variable_name,
-                    "variable_type": variable_type,
+                    **base_review,
                     "status": "unsupported_change_kind",
                     "message": f"Unsupported Grafana change_kind: {change_kind}",
                 }
             )
             continue
 
-        row_key = (org_id, dashboard_uid, variable_name, field_path, old_group, new_group)
+        row_key = (org_id, dashboard_uid, location_kind, field_path, old_group, new_group)
         if row_key in seen_rows:
             continue
         seen_rows.add(row_key)
@@ -635,10 +658,16 @@ def build_grafana_plan_from_impact(
                 "dashboard_title": dashboard_title,
                 "folder_title": str(row.get("folder_title") or ""),
                 "dashboard_url": dashboard_url,
+                "panel_url": panel_url,
+                "panel_id": panel_id,
+                "panel_title": panel_title,
+                "panel_type": panel_type,
+                "location_kind": location_kind,
                 "variable_name": variable_name,
                 "variable_type": variable_type,
                 "datasource_names": str(row.get("datasource_names") or ""),
                 "field_path": field_path,
+                "json_path": json_path,
                 "field_kind": field_kind,
                 "old_group": old_group,
                 "new_group": new_group,
@@ -657,7 +686,7 @@ def build_grafana_plan_from_impact(
         "scope_as": (impact_plan.get("summary") or {}).get("scope_as") or [],
         "scope_env": str((impact_plan.get("summary") or {}).get("scope_env") or "").strip(),
         "scope_gas": (impact_plan.get("summary") or {}).get("scope_gas") or [],
-        "grafana_changes": len(grafana_rows),
+        "grafana_input_rows": len(grafana_rows),
         "plan_rows": len(plan_rows),
         "manual_rows": sum(1 for row in plan_rows if str(row.get("manual_required") or "").strip()),
         "review_rows": len(review_rows),
@@ -707,124 +736,62 @@ def apply_grafana_plan(
         field_groups: Dict[Tuple[str, str], List[Dict[str, str]]] = defaultdict(list)
         for row in rows:
             requested += 1
-            field_groups[(row["variable_name"], row["field_path"])].append(row)
+            field_groups[(row["location_kind"], row["field_path"])].append(row)
 
-        for (variable_name, field_path), field_rows in sorted(field_groups.items(), key=lambda item: (item[0][0].lower(), item[0][1].lower())):
+        for (location_kind, field_path), field_rows in sorted(field_groups.items(), key=lambda item: (item[0][0].lower(), item[0][1].lower())):
             field_kind = str(field_rows[0].get("field_kind") or "")
-            _, variable = _find_variable(dashboard, variable_name)
-            if variable is None:
-                for row in field_rows:
-                    results.append(
-                        {
-                            "grafana_org_id": str(org_id),
-                            "dashboard_uid": dashboard_uid,
-                            "dashboard_title": dashboard_title,
-                            "dashboard_url": dashboard_url,
-                            "variable_name": variable_name,
-                            "field_path": field_path,
-                            "field_kind": field_kind,
-                            "old_group": row["old_group"],
-                            "new_group": row["new_group"],
-                            "before_value": "",
-                            "after_value": "",
-                            "status": "variable_not_found",
-                            "applied": "",
-                            "message": "Variable missing in current dashboard JSON.",
-                        }
-                    )
-                continue
+            variable_name = str(field_rows[0].get("variable_name") or "")
+
+            def append_result(row: Dict[str, str], status: str, before_value: str, after_value: str, message: str, applied: str = "") -> None:
+                results.append(
+                    {
+                        "grafana_org_id": str(org_id),
+                        "dashboard_uid": dashboard_uid,
+                        "dashboard_title": dashboard_title,
+                        "dashboard_url": dashboard_url,
+                        "panel_url": str(row.get("panel_url") or ""),
+                        "panel_id": str(row.get("panel_id") or ""),
+                        "panel_title": str(row.get("panel_title") or ""),
+                        "panel_type": str(row.get("panel_type") or ""),
+                        "location_kind": str(row.get("location_kind") or ""),
+                        "variable_name": str(row.get("variable_name") or ""),
+                        "field_path": field_path,
+                        "json_path": str(row.get("json_path") or ""),
+                        "field_kind": field_kind,
+                        "old_group": row["old_group"],
+                        "new_group": row["new_group"],
+                        "before_value": _shorten(before_value),
+                        "after_value": _shorten(after_value),
+                        "status": status,
+                        "applied": applied,
+                        "message": message,
+                    }
+                )
+
             try:
-                current_value = _get_path_value(variable, field_path)
+                current_value = _get_path_value(dashboard, field_path)
             except Exception as exc:
                 for row in field_rows:
-                    results.append(
-                        {
-                            "grafana_org_id": str(org_id),
-                            "dashboard_uid": dashboard_uid,
-                            "dashboard_title": dashboard_title,
-                            "dashboard_url": dashboard_url,
-                            "variable_name": variable_name,
-                            "field_path": field_path,
-                            "field_kind": field_kind,
-                            "old_group": row["old_group"],
-                            "new_group": row["new_group"],
-                            "before_value": "",
-                            "after_value": "",
-                            "status": "field_not_found",
-                            "applied": "",
-                            "message": str(exc),
-                        }
-                    )
+                    append_result(row, "field_not_found", "", "", str(exc))
                 continue
 
             before_value = str(current_value or "")
             source_values = {str(row.get("source_value") or "") for row in field_rows}
             if len(source_values) != 1:
                 for row in field_rows:
-                    results.append(
-                        {
-                            "grafana_org_id": str(org_id),
-                            "dashboard_uid": dashboard_uid,
-                            "dashboard_title": dashboard_title,
-                            "dashboard_url": dashboard_url,
-                            "variable_name": variable_name,
-                            "field_path": field_path,
-                            "field_kind": field_kind,
-                            "old_group": row["old_group"],
-                            "new_group": row["new_group"],
-                            "before_value": _shorten(before_value),
-                            "after_value": _shorten(before_value),
-                            "status": "plan_source_conflict",
-                            "applied": "",
-                            "message": "Selected rows for the same field have different source_value.",
-                        }
-                    )
+                    append_result(row, "plan_source_conflict", before_value, before_value, "Selected rows for the same field have different source_value.")
                 continue
 
             source_value = next(iter(source_values))
             if before_value != source_value:
                 for row in field_rows:
-                    results.append(
-                        {
-                            "grafana_org_id": str(org_id),
-                            "dashboard_uid": dashboard_uid,
-                            "dashboard_title": dashboard_title,
-                            "dashboard_url": dashboard_url,
-                            "variable_name": variable_name,
-                            "field_path": field_path,
-                            "field_kind": field_kind,
-                            "old_group": row["old_group"],
-                            "new_group": row["new_group"],
-                            "before_value": _shorten(before_value),
-                            "after_value": _shorten(before_value),
-                            "status": "source_mismatch",
-                            "applied": "",
-                            "message": "Current field value differs from source_value saved in Grafana plan.",
-                        }
-                    )
+                    append_result(row, "source_mismatch", before_value, before_value, "Current field value differs from source_value saved in Grafana plan.")
                 continue
 
             change_modes = {_resolve_change_mode(row) for row in field_rows}
             if len(change_modes) != 1:
                 for row in field_rows:
-                    results.append(
-                        {
-                            "grafana_org_id": str(org_id),
-                            "dashboard_uid": dashboard_uid,
-                            "dashboard_title": dashboard_title,
-                            "dashboard_url": dashboard_url,
-                            "variable_name": variable_name,
-                            "field_path": field_path,
-                            "field_kind": field_kind,
-                            "old_group": row["old_group"],
-                            "new_group": row["new_group"],
-                            "before_value": _shorten(before_value),
-                            "after_value": _shorten(before_value),
-                            "status": "mixed_change_modes",
-                            "applied": "",
-                            "message": "Selected rows for the same field contain different change_mode values.",
-                        }
-                    )
+                    append_result(row, "mixed_change_modes", before_value, before_value, "Selected rows for the same field contain different change_mode values.")
                 continue
 
             change_mode = next(iter(change_modes))
@@ -838,143 +805,41 @@ def apply_grafana_plan(
             )
             if invalid_pair is not None:
                 for row in field_rows:
-                    results.append(
-                        {
-                            "grafana_org_id": str(org_id),
-                            "dashboard_uid": dashboard_uid,
-                            "dashboard_title": dashboard_title,
-                            "dashboard_url": dashboard_url,
-                            "variable_name": variable_name,
-                            "field_path": field_path,
-                            "field_kind": field_kind,
-                            "old_group": row["old_group"],
-                            "new_group": row["new_group"],
-                            "before_value": _shorten(before_value),
-                            "after_value": _shorten(before_value),
-                            "status": "mapping_mismatch",
-                            "applied": "",
-                            "message": "Grafana plan row is not aligned with selected mapping_plan.xlsx pair.",
-                        }
-                    )
+                    append_result(row, "mapping_mismatch", before_value, before_value, "Grafana plan row is not aligned with selected impact mappings.")
                 continue
 
             after_value = before_value
             if change_mode == "manual_regex":
                 if len(field_rows) != 1:
                     for row in field_rows:
-                        results.append(
-                            {
-                                "grafana_org_id": str(org_id),
-                                "dashboard_uid": dashboard_uid,
-                                "dashboard_title": dashboard_title,
-                                "dashboard_url": dashboard_url,
-                                "variable_name": variable_name,
-                                "field_path": field_path,
-                                "field_kind": field_kind,
-                                "old_group": row["old_group"],
-                                "new_group": row["new_group"],
-                                "before_value": _shorten(before_value),
-                                "after_value": _shorten(before_value),
-                                "status": "multiple_manual_rows",
-                                "applied": "",
-                                "message": "manual_regex requires exactly one selected row per field.",
-                            }
-                        )
+                        append_result(row, "multiple_manual_rows", before_value, before_value, "manual_regex requires exactly one selected row per field.")
                     continue
                 manual_row = field_rows[0]
                 after_value = str(manual_row.get("planned_value") or "")
                 if not after_value:
-                    results.append(
-                        {
-                            "grafana_org_id": str(org_id),
-                            "dashboard_uid": dashboard_uid,
-                            "dashboard_title": dashboard_title,
-                            "dashboard_url": dashboard_url,
-                            "variable_name": variable_name,
-                            "field_path": field_path,
-                            "field_kind": field_kind,
-                            "old_group": manual_row["old_group"],
-                            "new_group": manual_row["new_group"],
-                            "before_value": _shorten(before_value),
-                            "after_value": "",
-                            "status": "empty_planned_value",
-                            "applied": "",
-                            "message": "manual_regex row must contain planned_value.",
-                        }
-                    )
+                    append_result(manual_row, "empty_planned_value", before_value, "", "manual_regex row must contain planned_value.")
                     continue
             else:
                 exact_rows = sorted(field_rows, key=lambda row: (-len(str(row.get("old_group") or "")), str(row.get("old_group") or "").lower()))
                 for row in exact_rows:
                     expected_planned = source_value.replace(row["old_group"], row["new_group"])
                     if str(row.get("planned_value") or "") != expected_planned:
-                        results.append(
-                            {
-                                "grafana_org_id": str(org_id),
-                                "dashboard_uid": dashboard_uid,
-                                "dashboard_title": dashboard_title,
-                                "dashboard_url": dashboard_url,
-                                "variable_name": variable_name,
-                                "field_path": field_path,
-                                "field_kind": field_kind,
-                                "old_group": row["old_group"],
-                                "new_group": row["new_group"],
-                                "before_value": _shorten(before_value),
-                                "after_value": _shorten(before_value),
-                                "status": "exact_row_edited",
-                                "applied": "",
-                                "message": "Exact row planned_value must stay derived from source_value and mapping_plan.xlsx.",
-                            }
-                        )
+                        append_result(row, "exact_row_edited", before_value, before_value, "Exact row planned_value must stay derived from source_value and selected mappings.")
                         break
                 else:
                     for row in exact_rows:
                         after_value = after_value.replace(row["old_group"], row["new_group"])
-                    _set_path_value(variable, field_path, after_value)
+                    _set_path_value(dashboard, field_path, after_value)
                     changed += 1
                     for row in field_rows:
-                        results.append(
-                            {
-                                "grafana_org_id": str(org_id),
-                                "dashboard_uid": dashboard_uid,
-                                "dashboard_title": dashboard_title,
-                                "dashboard_url": dashboard_url,
-                                "variable_name": variable_name,
-                                "field_path": field_path,
-                                "field_kind": field_kind,
-                                "old_group": row["old_group"],
-                                "new_group": row["new_group"],
-                                "before_value": _shorten(before_value),
-                                "after_value": _shorten(after_value),
-                                "status": "dry_run_changed" if dry_run else "changed",
-                                "applied": "no" if dry_run else "yes",
-                                "message": "",
-                            }
-                        )
+                        append_result(row, "dry_run_changed" if dry_run else "changed", before_value, after_value, "", "no" if dry_run else "yes")
                     continue
                 continue
 
-            _set_path_value(variable, field_path, after_value)
+            _set_path_value(dashboard, field_path, after_value)
             changed += 1
             for row in field_rows:
-                results.append(
-                    {
-                        "grafana_org_id": str(org_id),
-                        "dashboard_uid": dashboard_uid,
-                        "dashboard_title": dashboard_title,
-                        "dashboard_url": dashboard_url,
-                        "variable_name": variable_name,
-                        "field_path": field_path,
-                        "field_kind": field_kind,
-                        "old_group": row["old_group"],
-                        "new_group": row["new_group"],
-                        "before_value": _shorten(before_value),
-                        "after_value": _shorten(after_value),
-                        "status": "dry_run_changed" if dry_run else "changed",
-                        "applied": "no" if dry_run else "yes",
-                        "message": "",
-                    }
-                )
+                append_result(row, "dry_run_changed" if dry_run else "changed", before_value, after_value, "", "no" if dry_run else "yes")
 
         dashboard_status = "unchanged"
         dashboard_message = ""
