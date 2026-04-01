@@ -64,7 +64,7 @@ def main() -> int:
         logger.log(f"audit: zabbix_url={connection.api_url}")
         zabbix = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
         logger.log("audit: logging in to zabbix")
-        zabbix.login(connection.username, connection.password)
+        zabbix.authenticate(connection.username, connection.password, connection.api_token)
         logger.log("audit: zabbix login ok")
 
         logger.log("audit: running zabbix inventory")

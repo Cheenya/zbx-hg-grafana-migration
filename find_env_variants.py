@@ -253,7 +253,7 @@ def build_output_path() -> str:
 def main() -> int:
     connection = config.load_zabbix_connection()
     api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
-    api.login(connection.username, connection.password)
+    api.authenticate(connection.username, connection.password, connection.api_token)
 
     print("Fetching hosts...")
     hosts = fetch_hosts(api)

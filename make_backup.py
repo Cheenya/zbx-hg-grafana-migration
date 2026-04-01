@@ -267,7 +267,7 @@ def main() -> int:
 
     connection = config.load_zabbix_connection()
     api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
-    api.login(connection.username, connection.password)
+    api.authenticate(connection.username, connection.password, connection.api_token)
 
     if not str(config.SOURCE_IMPACT_PLAN_JSON or "").strip():
         print(f"Using latest impact plan JSON: {impact_plan_path}")

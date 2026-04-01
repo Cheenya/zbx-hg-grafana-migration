@@ -7,6 +7,7 @@ from dataclasses import dataclass
 ZBX_URL = ""
 ZBX_USER = ""
 ZBX_PASSWORD = ""
+ZBX_API_TOKEN = ""
 
 # Grafana. Заполняется руками.
 GRAFANA_URL = ""
@@ -114,6 +115,7 @@ class ZabbixConnection:
     api_url: str
     username: str
     password: str
+    api_token: str = ""
 
 
 @dataclass
@@ -128,6 +130,7 @@ def load_zabbix_connection() -> ZabbixConnection:
         api_url=(ZBX_URL or "").strip(),
         username=(ZBX_USER or "").strip(),
         password=(ZBX_PASSWORD or ""),
+        api_token=(ZBX_API_TOKEN or "").strip(),
     )
 
 

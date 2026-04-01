@@ -73,7 +73,12 @@ python restore_backup.py
 ZBX_URL = ""
 ZBX_USER = ""
 ZBX_PASSWORD = ""
+ZBX_API_TOKEN = ""
 ```
+
+`ZBX_API_TOKEN`:
+- если заполнен, Zabbix scripts используют Bearer token;
+- если пуст, используется логин/пароль.
 
 ### 4.2. Подключение к Grafana
 

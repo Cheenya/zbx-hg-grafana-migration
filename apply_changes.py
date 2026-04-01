@@ -180,7 +180,7 @@ def main() -> int:
     if "zabbix" in targets and impact_plan is not None:
         connection = config.load_zabbix_connection()
         api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
-        api.login(connection.username, connection.password)
+        api.authenticate(connection.username, connection.password, connection.api_token)
         if not dry_run:
             print("Checking Zabbix API permissions for host.massadd")
             _assert_host_massadd_available(api)

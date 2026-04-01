@@ -20,6 +20,7 @@ class ZabbixAPI:
         self.api_url = api_url
         self.timeout = int(timeout_sec)
         self.auth: Optional[str] = None
+        self.api_token: str = ""
         self._id = 1
 
     def call(self, method: str, params: Dict[str, Any]) -> Any:
@@ -32,9 +33,12 @@ class ZabbixAPI:
         self._id += 1
         if self.auth is not None:
             payload["auth"] = self.auth
+        headers = None
+        if self.api_token:
+            headers = {"Authorization": f"Bearer {self.api_token}"}
 
         try:
-            response = requests.post(self.api_url, json=payload, timeout=self.timeout, verify=False)
+            response = requests.post(self.api_url, json=payload, headers=headers, timeout=self.timeout, verify=False)
             response.raise_for_status()
             data = response.json()
         except Exception as exc:
@@ -46,6 +50,16 @@ class ZabbixAPI:
 
     def login(self, username: str, password: str) -> None:
         self.auth = self.call("user.login", {"username": username, "password": password})
+
+    def use_token(self, api_token: str) -> None:
+        self.api_token = str(api_token or "").strip()
+        self.auth = None
+
+    def authenticate(self, username: str = "", password: str = "", api_token: str = "") -> None:
+        if str(api_token or "").strip():
+            self.use_token(api_token)
+            return
+        self.login(username, password)
 
 
 class GrafanaAPI:
