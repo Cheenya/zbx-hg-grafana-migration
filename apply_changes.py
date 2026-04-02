@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Единая точка применения изменений: Zabbix host enrichment и/или Grafana variables."""
+"""Единая точка применения изменений: безопасный Zabbix apply и/или Grafana apply."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ from api_clients import ZabbixAPI
 from apply_zabbix_plan import (
     _assert_host_massadd_available,
     _validate_backup_scope,
-    apply_host_enrichment,
+    _auto_object_rows,
+    _assert_method_available,
+    apply_zabbix_changes,
     load_impact_plan,
     write_apply_xlsx as write_zabbix_apply_xlsx,
 )
@@ -39,7 +41,13 @@ def _zabbix_preview(impact_plan: Dict[str, Any]) -> Dict[str, Any]:
         for row in host_rows
         if str(row.get("object_id") or "").strip()
     }
-    skipped_rows = impact_plan.get("object_mapping_plan") or []
+    auto_object_rows = _auto_object_rows(impact_plan)
+    manual_object_rows = [
+        row
+        for row in impact_plan.get("object_mapping_plan") or []
+        if str(row.get("manual_required") or "").strip().lower() == "yes"
+        or str(row.get("change_kind") or "").strip() not in {"replace_groupid", "add_group_permission"}
+    ]
     summary = impact_plan.get("summary") or {}
     return {
         "scope_as": summary.get("scope_as") or [],
@@ -47,7 +55,8 @@ def _zabbix_preview(impact_plan: Dict[str, Any]) -> Dict[str, Any]:
         "scope_gas": summary.get("scope_gas") or [],
         "host_rows": len(host_rows),
         "hosts": len(host_ids),
-        "skipped_object_rows": len(skipped_rows),
+        "auto_object_rows": len(auto_object_rows),
+        "manual_object_rows": len(manual_object_rows),
     }
 
 
@@ -76,7 +85,8 @@ def _print_preview(targets: Sequence[str], zbx_preview: Dict[str, Any] | None, g
         print(f"  scope_gas: {', '.join(zbx_preview['scope_gas']) or '-'}")
         print(f"  host rows: {zbx_preview['host_rows']}")
         print(f"  hosts to enrich: {zbx_preview['hosts']}")
-        print(f"  skipped object rows: {zbx_preview['skipped_object_rows']}")
+        print(f"  auto object rows: {zbx_preview['auto_object_rows']}")
+        print(f"  manual object rows: {zbx_preview['manual_object_rows']}")
     if "grafana" in targets and graf_preview is not None:
         print("Grafana:")
         print(f"  org_ids: {', '.join(str(item) for item in graf_preview['grafana_org_ids']) or '-'}")
@@ -182,13 +192,28 @@ def main() -> int:
         api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
         api.authenticate(connection.username, connection.password, connection.api_token)
         if not dry_run:
-            print("Checking Zabbix API permissions for host.massadd")
-            _assert_host_massadd_available(api)
+            auto_rows = _auto_object_rows(impact_plan)
+            methods_to_check = set()
+            if any(str(row.get("object_id") or "").strip() for row in impact_plan.get("host_enrich_plan") or []):
+                methods_to_check.add("host.massadd")
+            if any(str(row.get("object_type") or "") == "action" for row in auto_rows):
+                methods_to_check.add("action.update")
+            if any(str(row.get("object_type") or "") == "usergroup" for row in auto_rows):
+                methods_to_check.add("usergroup.update")
+            if any(str(row.get("object_type") or "") == "maintenance" for row in auto_rows):
+                methods_to_check.add("maintenance.update")
+            for method in sorted(methods_to_check):
+                print(f"Checking Zabbix API permissions for {method}")
+                params = {"hosts": [], "groups": []} if method == "host.massadd" else {}
+                if method == "host.massadd":
+                    _assert_host_massadd_available(api)
+                else:
+                    _assert_method_available(api, method, params)
             print(f"Validating backup for Zabbix apply: {backup_path}")
             _validate_backup_scope(backup_path, impact_plan, api)
 
         print(f"Running Zabbix {'apply' if not dry_run else 'dry-run'} from: {impact_plan_path}")
-        zbx_result = apply_host_enrichment(api, impact_plan, dry_run=dry_run)
+        zbx_result = apply_zabbix_changes(api, impact_plan, dry_run=dry_run)
         zbx_result.setdefault("meta", {})["impact_plan_path"] = impact_plan_path
         zbx_out_xlsx = build_artifact_path(config.ZABBIX_APPLY_PREFIX, zbx_scope_as, zbx_scope_env, zbx_scope_gas, ".xlsx", timestamp=timestamp)
         zbx_out_json = build_artifact_path(config.ZABBIX_APPLY_PREFIX, zbx_scope_as, zbx_scope_env, zbx_scope_gas, ".json", timestamp=timestamp)

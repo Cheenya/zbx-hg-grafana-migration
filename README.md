@@ -125,9 +125,13 @@
 - читает `SOURCE_IMPACT_PLAN_JSON`;
 - по умолчанию работает как dry-run;
 - в apply-режиме требует валидный backup того же scope;
-- на текущем этапе применяет только host enrichment:
-  - не удаляет old groups;
-  - не трогает actions/usergroups/maintenances;
+- применяет только безопасные Zabbix-изменения:
+  - host enrichment через `host.massadd`;
+  - `action.update` для безопасных `replace_groupid`;
+  - `maintenance.update` для безопасных `replace_groupid`;
+  - `usergroup.update` только для добавления недостающих permissions на новые группы;
+  - manual rows остаются в `SKIPPED_OBJECTS`;
+  - old groups и old rights не удаляет;
 - сохраняет:
   - `zabbix_apply_*.xlsx`
   - `zabbix_apply_*.json`
@@ -155,7 +159,7 @@
 - если нужного тега нет, соответствующая standard group для хоста не строится;
 - Grafana меняется только отдельным `apply_grafana_plan.py` и по умолчанию идёт в dry-run;
 - если `SOURCE_*` путь не задан, соответствующий скрипт берёт самый свежий файл из `OUTPUT_DIR`;
-- change-scope для Zabbix объектов пока только готовится и проверяется, без автоматического apply.
+- manual change-scope для Zabbix объектов по-прежнему не применяется автоматически: такие строки остаются в review/skip.
 
 Формат scope:
 - ORG по доменам задаётся в `ORG_DOMAIN_SUFFIXES`, например:

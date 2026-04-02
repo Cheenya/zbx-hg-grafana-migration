@@ -10,11 +10,11 @@
 - построить точный `impact_plan`;
 - собрать backup строго по change-scope;
 - проверить backup;
-- выполнить безопасное донасыщение host-groups на хостах;
+- выполнить безопасное Zabbix apply по auto-строкам impact plan;
 - уметь сделать restore.
 
 На текущем этапе контур:
-- в Zabbix меняет только host enrichment через отдельный `apply_zabbix_plan.py`;
+- в Zabbix автоматически меняет только безопасные строки из `impact_plan`;
 - меняет Grafana только через отдельный `apply_grafana_plan.py`;
 - по умолчанию Grafana apply идёт как dry-run;
 - по умолчанию Zabbix apply тоже идёт как dry-run.
@@ -39,11 +39,11 @@ python restore_backup.py
 - `audit_scope.py` — аудит и первичный `mapping_plan.xlsx`;
 - `grafana_org_audit.py` — отдельный аудит Grafana по `orgId`, без привязки к `AS`;
 - `build_grafana_plan.py` — build плана замены host-groups в Grafana variables;
-- `apply_grafana_plan.py` — dry-run/apply Grafana variable plan;
+- `apply_grafana_plan.py` — dry-run/apply Grafana plan;
 - `build_impact_plan.py` — build change-scope по выбранным mappings;
 - `make_backup.py` — backup по `impact_plan.json`;
 - `verify_backup.py` — сверка backup против `impact_plan.json`;
-- `apply_zabbix_plan.py` — dry-run/apply host enrichment в Zabbix;
+- `apply_zabbix_plan.py` — dry-run/apply безопасных Zabbix-изменений из `impact_plan`;
 - `apply_changes.py` — единый apply-runner для Zabbix/Grafana с preview и подтверждением;
 - `restore_backup.py` — откат Zabbix из backup.
 
@@ -673,7 +673,7 @@ SOURCE_MAPPING_PLAN_XLSX = r"v2_output\\mapping_plan_v2_....xlsx"
 python build_impact_plan.py
 ```
 
-### Шаг 4a. Build Grafana variable plan
+### Шаг 4a. Build Grafana plan
 
 Если нужно подготовить замену old/new host-groups в Grafana variables:
 
@@ -691,7 +691,7 @@ python build_grafana_plan.py
 apply = yes
 ```
 
-### Шаг 4b. Dry-run / apply Grafana variable plan
+### Шаг 4b. Dry-run / apply Grafana plan
 
 В `config.py` указать:
 
@@ -746,7 +746,7 @@ python verify_backup.py
 python restore_backup.py
 ```
 
-### Шаг 8. Zabbix host enrichment
+### Шаг 8. Zabbix apply
 
 Предпочтительный запуск через единый runner:
 
@@ -770,6 +770,13 @@ ZABBIX_APPLY_CHANGES = False
 python apply_zabbix_plan.py
 ```
 
+Что реально применяется автоматически:
+- host enrichment через `host.massadd`;
+- `action.update` для безопасных `replace_groupid`;
+- `maintenance.update` для безопасных `replace_groupid`;
+- `usergroup.update` только для `add_group_permission`;
+- manual rows остаются в `SKIPPED_OBJECTS`.
+
 Только после успешного цикла:
 - audit
 - mapping review
@@ -777,8 +784,8 @@ python apply_zabbix_plan.py
 - backup
 - verify
 - restore test
-- host enrichment dry-run
-- host enrichment apply
+- Zabbix dry-run
+- Zabbix apply
 
 можно переходить к будущему `migrate`.
 
@@ -786,7 +793,7 @@ python apply_zabbix_plan.py
 ## 12. Ограничения текущей версии
 
 Контур пока не делает:
-- автоматический apply для actions/usergroups/maintenances;
+- автоматический apply для manual Zabbix rows;
 - postcheck после миграции;
 - rewrite panel/dashboard-level Grafana полей вне variables;
 - backup Grafana перед apply.
