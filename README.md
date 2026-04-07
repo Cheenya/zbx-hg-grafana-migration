@@ -7,6 +7,7 @@
 
 Что уже есть:
 - `python audit_scope.py` — read-only аудит Zabbix/Grafana;
+- `python build_as_queue.py` — алфавитная очередь всех `AS` с количеством хостов и discovery-кейсами;
 - `python grafana_org_audit.py` — отдельный аудит Grafana по `orgId`, без привязки к AS;
 - `python build_grafana_plan.py` — сбор плана замены old/new host-groups в Grafana variables и panel `targets[*].group.filter`;
 - `python apply_grafana_plan.py` — dry-run/apply этого плана в Grafana;
@@ -32,6 +33,7 @@
   - `$ORG/OS/(LINUX|WINDOWS)`
   - `$ORG/OS/(LINUX|WINDOWS)/#ENV`
 - проверяет существование этих групп в `Data collection -> Host groups`;
+- отдельно показывает discovery-хосты и исключает их из автоматической обработки;
 - отдельно показывает `UNKNOWN`-хосты;
 - отдельно показывает `MISMATCHES`:
   - домен хоста vs legacy ORG;
@@ -46,6 +48,20 @@
   - `scope_audit_v2_*.json`
   - `mapping_plan_v2_*.xlsx`
   - `grafana_audit_v2_*.xlsx`
+
+Что делает `build_as_queue.py`:
+- читает весь `host.get`;
+- собирает уникальные `AS` в алфавитном порядке;
+- для каждой `AS` показывает:
+  - количество хостов;
+  - enabled/disabled;
+  - найденные `ORG`;
+  - варианты `ENV` и `GAS`;
+  - количество discovery-хостов;
+- отдельно сохраняет хосты без `AS` и discovery-хосты;
+- сохраняет:
+  - `as_queue_v2_*.xlsx`
+  - `as_queue_v2_*.json`
 
 Что делает `grafana_org_audit.py`:
 - берёт `GRAFANA_AUDIT_ORGIDS` из `config.py`;

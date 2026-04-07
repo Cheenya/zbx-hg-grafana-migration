@@ -204,6 +204,69 @@ def resolve_host_org(host_values: Sequence[str], group_names: Sequence[str]) -> 
     return "", [f"ORG unresolved: multiple values ({join_sorted(candidates)})"]
 
 
+def _compile_optional_patterns(patterns: Sequence[str]) -> List[re.Pattern[str]]:
+    compiled: List[re.Pattern[str]] = []
+    for pattern in patterns or ():
+        text = str(pattern or "").strip()
+        if not text:
+            continue
+        compiled.append(re.compile(text, re.IGNORECASE))
+    return compiled
+
+
+def detect_discovery_host(host: Dict[str, Any], group_names: Sequence[str]) -> Optional[Dict[str, Any]]:
+    reasons: List[str] = []
+
+    flags_raw = str(host.get("flags") or "").strip()
+    flags_value = 0
+    if flags_raw:
+        try:
+            flags_value = int(flags_raw)
+        except (TypeError, ValueError):
+            flags_value = 0
+
+    if flags_value & 4:
+        reasons.append(f"flags={flags_value}")
+
+    discovery_data = host.get("discoveryData") or host.get("hostDiscovery") or {}
+    if isinstance(discovery_data, dict) and discovery_data:
+        reasons.append("discoveryData")
+
+    host_patterns = _compile_optional_patterns(getattr(config, "DISCOVERY_HOST_PATTERNS", ()))
+    host_values = [str(host.get("host") or ""), str(host.get("name") or "")]
+    for pattern in host_patterns:
+        for value in host_values:
+            text = str(value or "").strip()
+            if text and pattern.search(text):
+                reasons.append(f"host_pattern={pattern.pattern}")
+                break
+
+    group_patterns = _compile_optional_patterns(getattr(config, "DISCOVERY_GROUP_PATTERNS", ()))
+    for pattern in group_patterns:
+        for group_name in group_names:
+            text = str(group_name or "").strip()
+            if text and pattern.search(text):
+                reasons.append(f"group_pattern={pattern.pattern}")
+                break
+
+    if not reasons:
+        return None
+
+    if not isinstance(discovery_data, dict):
+        discovery_data = {}
+
+    return {
+        "flags": flags_raw,
+        "discovery_parent_hostid": str(discovery_data.get("parent_hostid") or ""),
+        "discovery_parent_itemid": str(discovery_data.get("parent_itemid") or ""),
+        "discovery_status": str(discovery_data.get("status") or ""),
+        "discovery_disable_source": str(discovery_data.get("disable_source") or ""),
+        "discovery_ts_disable": str(discovery_data.get("ts_disable") or ""),
+        "discovery_ts_delete": str(discovery_data.get("ts_delete") or ""),
+        "discovery_reason": "; ".join(reasons),
+    }
+
+
 def resolve_os_family(guest_name: Optional[str]) -> str:
     text = str(guest_name or "").strip().lower()
     if not text:

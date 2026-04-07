@@ -24,6 +24,7 @@
 
 ```bash
 python audit_scope.py
+python build_as_queue.py
 python grafana_org_audit.py
 python build_grafana_plan.py
 python apply_grafana_plan.py
@@ -37,6 +38,7 @@ python restore_backup.py
 
 Назначение:
 - `audit_scope.py` — аудит и первичный `mapping_plan.xlsx`;
+- `build_as_queue.py` — алфавитная очередь всех `AS`;
 - `grafana_org_audit.py` — отдельный аудит Grafana по `orgId`, без привязки к `AS`;
 - `build_grafana_plan.py` — build плана замены host-groups в Grafana variables;
 - `apply_grafana_plan.py` — dry-run/apply Grafana plan;
@@ -54,6 +56,7 @@ python restore_backup.py
 - `api_clients.py` — HTTP-клиенты для Zabbix/Grafana;
 - `common.py` — общие утилиты и генерация путей артефактов;
 - `zabbix_audit.py` — read-only аудит Zabbix;
+- `build_as_queue.py` — алфавитный список `AS` и discovery-кейсов;
 - `grafana_audit.py` — read-only аудит Grafana;
 - `grafana_org_audit.py` — org-level аудит Grafana/Zabbix datasource usage;
 - `grafana_plan.py` — build/apply плана изменений Grafana variables;
@@ -277,6 +280,7 @@ MAPPING_FORBID_ENV_MISMATCH = True
 
 `audit_scope.py`:
 - читает хосты, actions, usergroups, users, maintenances;
+- отдельно выделяет discovery-хосты и исключает их из автоматической обработки;
 - выделяет `UNKNOWN_HOSTS`;
 - строит `HOSTS`, `GROUPS_OLD`, `GROUPS_NEW`, `EXPECTED_GROUPS`;
 - строит `MAPPING_PLAN` с кандидатами `OLD -> NEW`;
@@ -302,9 +306,6 @@ MAPPING_FORBID_ENV_MISMATCH = True
 `SUMMARY`
 - сводка по scope и количествам объектов.
 
-`UNKNOWN_HOSTS`
-- хосты с `AS == UNKNOWN`, группой `UNKNOWN` или без `AS`.
-
 `HOSTS`
 - основные хосты scope;
 - показывает `ORG`, `AS`, `GAS`, `GUEST_NAME`, `OS_FAMILY`, `ENV_RAW`, `ENV_SCOPE`;
@@ -316,17 +317,32 @@ MAPPING_FORBID_ENV_MISMATCH = True
 `HOSTS_NO_ANY_NEW`
 - хосты с `OLD`-группами, но вообще без назначенных standard groups.
 
-`HOST_ENRICHMENT`
-- хосты и предполагаемое насыщение;
-- показывает ожидаемые `ENV/AS/GAS/OS` groups;
-- отдельно показывает:
-  - `catalog_existing_groups`
-  - `catalog_missing_groups`
-  - `host_present_expected_groups`
-  - `host_missing_expected_groups`
-  - `suggested_pairs`
-  - `suggested_new_groups`
-  - `unresolved_reasons`.
+`HOSTS_EXCLUDED`
+- объединённый список:
+  - discovery;
+  - `UNKNOWN`;
+  - `ENV_SCOPE`;
+  - `GAS_SCOPE`.
+
+`HOSTS_DISCOVERY`
+- discovery-хосты;
+- показывает `flags`, `discoveryData`, proxy и причину исключения.
+
+`MISMATCHES`
+- хосты с:
+  - `host domain ORG != old group ORG`;
+  - `host domain ORG != proxy ORG`;
+  - `legacy ENV != tag ENV`.
+
+## 5.3. Что делает `build_as_queue.py`
+
+`build_as_queue.py`:
+- читает весь `host.get`;
+- собирает уникальные `AS` в алфавитном порядке;
+- сохраняет:
+  - `AS_QUEUE` — список `AS` с количеством хостов, `ORG`, `ENV`, `GAS`, discovery-count;
+  - `MISSING_AS` — хосты без `AS` или с `AS=UNKNOWN`;
+  - `DISCOVERY_HOSTS` — discovery-хосты по всему контуру.
 
 `HOSTS_NEED_ENRICH`
 - подмножество `HOST_ENRICHMENT`, где есть что добавить на хост или где не хватает host-group в каталоге Zabbix.

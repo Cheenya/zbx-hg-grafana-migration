@@ -313,6 +313,31 @@ EXCLUDED_HOST_HEADERS = [
     "reason",
 ]
 
+DISCOVERY_HOST_HEADERS = [
+    "hostid",
+    "host",
+    "name",
+    "status_label",
+    "ORG",
+    "AS",
+    "GAS",
+    "ENV_RAW",
+    "ENV_SCOPE",
+    "OS_FAMILY",
+    "proxyid",
+    "proxy_name",
+    "current_groups",
+    "flags",
+    "discovery_parent_hostid",
+    "discovery_parent_itemid",
+    "discovery_status",
+    "discovery_disable_source",
+    "discovery_ts_disable",
+    "discovery_ts_delete",
+    "discovery_reason",
+    "scope_skip_reason",
+]
+
 OBJECT_PREVIEW_HEADERS = [
     "object_type",
     "object_id",
@@ -469,6 +494,8 @@ def _apply_kind_column_fills(ws, headers: Sequence[str]) -> None:
         "reason": ALERT_FILL,
         "unresolved_reasons": ALERT_FILL,
         "suggestion_status": ALERT_FILL,
+        "discovery_reason": ALERT_FILL,
+        "scope_skip_reason": ALERT_FILL,
         "suggested_new_group": AS_FILL,
         "suggested_value": AS_FILL,
         "include_reason": INFO_FILL,
@@ -478,6 +505,15 @@ def _apply_kind_column_fills(ws, headers: Sequence[str]) -> None:
         "reference_kind": INFO_FILL,
         "field_kind": INFO_FILL,
         "json_path": INFO_FILL,
+        "flags": INFO_FILL,
+        "proxy_name": INFO_FILL,
+        "proxyid": INFO_FILL,
+        "discovery_parent_hostid": INFO_FILL,
+        "discovery_parent_itemid": INFO_FILL,
+        "discovery_status": INFO_FILL,
+        "discovery_disable_source": INFO_FILL,
+        "discovery_ts_disable": INFO_FILL,
+        "discovery_ts_delete": INFO_FILL,
         "dashboard_url": LINK_FILL,
         "panel_url": LINK_FILL,
     }
@@ -582,6 +618,24 @@ def _build_host_view_rows(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
 
 def _build_excluded_host_rows(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
+    for row in report["discovery_hosts"]:
+        rows.append(
+            {
+                "exclude_kind": "DISCOVERY",
+                "hostid": row.get("hostid", ""),
+                "host": row.get("host", ""),
+                "name": row.get("name", ""),
+                "status_label": row.get("status_label", ""),
+                "ORG": row.get("ORG", ""),
+                "AS": row.get("AS", ""),
+                "GAS": row.get("GAS", ""),
+                "ENV_RAW": row.get("ENV_RAW", ""),
+                "ENV_SCOPE": row.get("ENV_SCOPE", ""),
+                "OS_FAMILY": row.get("OS_FAMILY", ""),
+                "current_groups": row.get("current_groups", ""),
+                "reason": row.get("discovery_reason", ""),
+            }
+        )
     for row in report["unknown_hosts"]:
         rows.append(
             {
@@ -839,6 +893,7 @@ def save_inventory_json(report: Dict[str, Any], path: str) -> None:
         },
         "summary": report["summary"],
         "inventory": report["inventory"],
+        "discovery_hosts": report["discovery_hosts"],
         "unknown_hosts": report["unknown_hosts"],
         "hosts": report["hosts"],
         "hosts_replace": report["hosts_replace"],
@@ -937,6 +992,10 @@ def write_workbook(report: Dict[str, Any], out_path: str) -> None:
     excluded_ws = wb.create_sheet("HOSTS_EXCLUDED")
     _append_rows(excluded_ws, _build_excluded_host_rows(report), EXCLUDED_HOST_HEADERS)
     _finalize_table_sheet(excluded_ws, EXCLUDED_HOST_HEADERS)
+
+    discovery_ws = wb.create_sheet("HOSTS_DISCOVERY")
+    _append_rows(discovery_ws, report["discovery_hosts"], DISCOVERY_HOST_HEADERS)
+    _finalize_table_sheet(discovery_ws, DISCOVERY_HOST_HEADERS)
 
     mismatch_ws = wb.create_sheet("MISMATCHES")
     mismatch_titles: List[int] = []

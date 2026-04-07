@@ -50,6 +50,7 @@ ZABBIX_APPLY_CHANGES: bool = False
 # Каталог и имена артефактов.
 OUTPUT_DIR: str = "v2_output"
 OUTPUT_PREFIX: str = "scope_audit_v2"
+AS_QUEUE_PREFIX: str = "as_queue_v2"
 AUDIT_LOG_PREFIX: str = "audit_log_v2"
 GRAFANA_REPORT_PREFIX: str = "grafana_audit_v2"
 GRAFANA_ORG_AUDIT_PREFIX: str = "grafana_org_audit"
@@ -109,6 +110,11 @@ EXCLUDED_GROUP_PATTERNS: tuple[str, ...] = (
     r"^(BNK|DOM)-(LINUX|WINDOWS)(-|$)",
     r"^(BNK|DOM)-(POSTGRES|POSTGRESQL|PG)(-|$)",
 )
+
+# Дискаверинг-хосты. Встроенно ловятся по flags/discoveryData.
+# Здесь можно добавить локальные regex для добора вручную.
+DISCOVERY_HOST_PATTERNS: tuple[str, ...] = ()
+DISCOVERY_GROUP_PATTERNS: tuple[str, ...] = ()
 
 @dataclass
 class ZabbixConnection:

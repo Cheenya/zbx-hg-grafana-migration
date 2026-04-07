@@ -9,6 +9,7 @@ from api_clients import ZabbixAPI
 from common import (
     build_expected_hostgroups,
     canonical_env_value,
+    detect_discovery_host,
     extract_legacy_env_token,
     extract_action_groupids,
     extract_action_recipients,
@@ -39,9 +40,10 @@ def fetch_hostgroups(api: ZabbixAPI) -> List[Dict[str, Any]]:
 
 def fetch_hosts(api: ZabbixAPI) -> List[Dict[str, Any]]:
     params: Dict[str, Any] = {
-        "output": ["hostid", "host", "name", "status", "proxyid"],
+        "output": ["hostid", "host", "name", "status", "proxyid", "flags"],
         "selectGroups": ["groupid", "name"],
         "selectTags": ["tag", "value"],
+        "selectDiscoveryData": "extend",
     }
     if config.MONITORED_HOSTS_ONLY:
         params["monitored_hosts"] = True
@@ -1003,6 +1005,7 @@ def build_scope_report(
     scope_hosts_no_any_new: List[Dict[str, Any]] = []
     scope_hosts_skipped_env: List[Dict[str, Any]] = []
     scope_hosts_skipped_gas: List[Dict[str, Any]] = []
+    discovery_rows: List[Dict[str, Any]] = []
     scope_groupids: Set[str] = set()
     unknown_rows: List[Dict[str, Any]] = []
     old_bucket: Dict[str, Dict[str, Any]] = defaultdict(_ensure_old_bucket_row)
@@ -1047,6 +1050,53 @@ def build_scope_report(
             group_name = str(group.get("name") or "")
             if is_old_group(group_name) and as_value:
                 old_group_global_as_values[group_name].add(str(as_value).strip())
+
+        discovery_details = detect_discovery_host(host, group_names)
+        discovery_in_scope = False
+        if as_value and as_value.strip().lower() in scope_as_lower:
+            discovery_in_scope = True
+        elif discovery_details and _unknown_in_scope(host, scope_as_values, scope_as_lower):
+            discovery_in_scope = True
+
+        if discovery_details and discovery_in_scope:
+            scope_skip_reason = ""
+            if scope_env_lower and (not env_value or env_value.strip().lower() not in scope_env_lower):
+                scope_skip_reason = "ENV mismatch"
+            elif scope_gas_upper and gas_upper not in scope_gas_upper:
+                scope_skip_reason = "GAS mismatch"
+
+            org_value, _ = resolve_host_org([str(host.get("host") or ""), str(host.get("name") or "")], group_names)
+            proxy_id = str(host.get("proxyid") or "").strip()
+            proxy = proxies_by_id.get(proxy_id, {})
+            discovery_rows.append(
+                {
+                    "hostid": str(host.get("hostid") or ""),
+                    "host": str(host.get("host") or ""),
+                    "name": str(host.get("name") or ""),
+                    "status": str(host.get("status") or ""),
+                    "status_label": _host_status_label(host.get("status")),
+                    "ORG": org_value,
+                    "AS": as_value or "",
+                    "GAS": gas_value or "",
+                    "GUEST_NAME": guest_name or "",
+                    "OS_FAMILY": os_family,
+                    "ENV_RAW": env_value_raw or "",
+                    "ENV_SCOPE": env_value or "",
+                    "proxyid": proxy_id,
+                    "proxy_name": str(proxy.get("name") or proxy.get("host") or ""),
+                    "current_groups": join_sorted(group_names),
+                    "flags": discovery_details.get("flags", ""),
+                    "discovery_parent_hostid": discovery_details.get("discovery_parent_hostid", ""),
+                    "discovery_parent_itemid": discovery_details.get("discovery_parent_itemid", ""),
+                    "discovery_status": discovery_details.get("discovery_status", ""),
+                    "discovery_disable_source": discovery_details.get("discovery_disable_source", ""),
+                    "discovery_ts_disable": discovery_details.get("discovery_ts_disable", ""),
+                    "discovery_ts_delete": discovery_details.get("discovery_ts_delete", ""),
+                    "discovery_reason": discovery_details.get("discovery_reason", ""),
+                    "scope_skip_reason": scope_skip_reason,
+                }
+            )
+            continue
 
         if unknown_reasons:
             include_unknown = _unknown_in_scope(host, scope_as_values, scope_as_lower)
@@ -1418,7 +1468,8 @@ def build_scope_report(
         "zabbix: host scan completed "
         f"scope_hosts={len(scope_hosts)} old_scope={len(scope_hosts_replace)} "
         f"no_any_new={len(scope_hosts_no_any_new)} "
-        f"skipped_env={len(scope_hosts_skipped_env)} skipped_gas={len(scope_hosts_skipped_gas)} unknown={len(unknown_rows)}",
+        f"skipped_env={len(scope_hosts_skipped_env)} skipped_gas={len(scope_hosts_skipped_gas)} "
+        f"discovery={len(discovery_rows)} unknown={len(unknown_rows)}",
     )
 
     mapping_plan_rows = _build_mapping_plan_rows(old_bucket, standard_bucket, expected_bucket, host_mapping_targets)
@@ -1759,10 +1810,11 @@ def build_scope_report(
         "hosts_excluded_manual": len(
             {
                 str(row.get("hostid") or "")
-                for row in mismatch_host_oldorg_rows + mismatch_host_proxyorg_rows + mismatch_legacy_env_rows
+                for row in mismatch_host_oldorg_rows + mismatch_host_proxyorg_rows + mismatch_legacy_env_rows + discovery_rows
                 if str(row.get("hostid") or "").strip()
             }
         ),
+        "hosts_discovery": len(discovery_rows),
         "hosts_mismatch_oldorg": len(mismatch_host_oldorg_rows),
         "hosts_mismatch_proxyorg": len(mismatch_host_proxyorg_rows),
         "hosts_mismatch_legacy_env": len(mismatch_legacy_env_rows),
@@ -1792,6 +1844,7 @@ def build_scope_report(
 
     return {
         "summary": summary,
+        "discovery_hosts": _sort_host_rows(discovery_rows),
         "unknown_hosts": _sort_host_rows(unknown_rows),
         "hosts": host_rows_sorted,
         "hosts_replace": _sort_host_rows(scope_hosts_replace),
@@ -1836,10 +1889,11 @@ def build_scope_report(
             "excluded_hostids_manual": sorted(
                 {
                     str(row.get("hostid") or "")
-                    for row in mismatch_host_oldorg_rows + mismatch_host_proxyorg_rows + mismatch_legacy_env_rows
+                    for row in mismatch_host_oldorg_rows + mismatch_host_proxyorg_rows + mismatch_legacy_env_rows + discovery_rows
                     if str(row.get("hostid") or "").strip()
                 }
             ),
+            "discovery_hostids": sorted(row["hostid"] for row in discovery_rows if row.get("hostid")),
             "hostgroups": sorted(inventory_hostgroups, key=lambda item: (item["kind"], item["name"].lower())),
             "grafana_old_groups": grafana_old_groups_dedup,
             "actionids": sorted(row["actionid"] for row in action_rows if row.get("actionid")),
