@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections import defaultdict
@@ -17,6 +18,7 @@ from mapping_plan import is_selected
 
 GRAFANA_PLAN_HEADERS: List[str] = [
     "apply",
+    "impact_signature",
     "grafana_org_id",
     "dashboard_uid",
     "dashboard_title",
@@ -196,6 +198,7 @@ def get_selected_grafana_changes(rows: Sequence[Dict[str, Any]]) -> List[Dict[st
     for row in rows:
         if not is_selected(row.get("apply")):
             continue
+        impact_signature = str(row.get("impact_signature") or "").strip()
         grafana_org_id = str(row.get("grafana_org_id") or "").strip()
         dashboard_uid = str(row.get("dashboard_uid") or "").strip()
         location_kind = str(row.get("location_kind") or "").strip()
@@ -203,10 +206,11 @@ def get_selected_grafana_changes(rows: Sequence[Dict[str, Any]]) -> List[Dict[st
         field_path = str(row.get("field_path") or "").strip()
         old_group = str(row.get("old_group") or "").strip()
         new_group = str(row.get("new_group") or "").strip()
-        if not all([grafana_org_id, dashboard_uid, location_kind, field_path, old_group, new_group]):
-            raise RuntimeError("Selected Grafana plan row must contain org_id, dashboard_uid, location_kind, field_path, old_group, new_group.")
+        if not all([impact_signature, grafana_org_id, dashboard_uid, location_kind, field_path, old_group, new_group]):
+            raise RuntimeError("Selected Grafana plan row must contain impact_signature, org_id, dashboard_uid, location_kind, field_path, old_group, new_group.")
         selected.append(
             {
+                "impact_signature": impact_signature,
                 "grafana_org_id": grafana_org_id,
                 "dashboard_uid": dashboard_uid,
                 "dashboard_title": str(row.get("dashboard_title") or "").strip(),
@@ -224,6 +228,7 @@ def get_selected_grafana_changes(rows: Sequence[Dict[str, Any]]) -> List[Dict[st
                 "new_group": new_group,
                 "source_value": str(row.get("source_value") or ""),
                 "planned_value": str(row.get("planned_value") or ""),
+                "change_kind": str(row.get("change_kind") or "").strip(),
                 "change_mode": str(row.get("change_mode") or "").strip(),
             }
         )
@@ -334,6 +339,32 @@ def _allowed_mapping_pairs(selected_mappings: Sequence[Dict[str, str]]) -> set[t
         if old_group and new_group:
             out.add((old_group, new_group))
     return out
+
+
+def _impact_signature_from_row(row: Dict[str, Any]) -> str:
+    payload = {
+        "grafana_org_id": str(row.get("grafana_org_id") or "").strip(),
+        "dashboard_uid": str(row.get("dashboard_uid") or "").strip(),
+        "location_kind": str(row.get("location_kind") or "").strip(),
+        "variable_name": str(row.get("variable_name") or "").strip(),
+        "panel_id": str(row.get("panel_id") or "").strip(),
+        "json_path": str(row.get("json_path") or "").strip(),
+        "field_kind": str(row.get("field_kind") or "").strip(),
+        "old_group": str(row.get("old_group") or "").strip(),
+        "new_group": str(row.get("new_group") or "").strip(),
+        "change_kind": str(row.get("change_kind") or "").strip(),
+        "source_text": str(row.get("source_text") or row.get("source_value") or ""),
+    }
+    return hashlib.sha1(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _executable_grafana_rows_by_signature(impact_plan: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    rows: Dict[str, Dict[str, Any]] = {}
+    for row in impact_plan.get("grafana_changes") or []:
+        signature = _impact_signature_from_row(row)
+        if signature:
+            rows[signature] = row
+    return rows
 
 
 def _collect_variable_targets(org_audit_report: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -528,11 +559,31 @@ def build_grafana_plan_from_impact(
     plan_rows: List[Dict[str, Any]] = []
     review_rows: List[Dict[str, Any]] = []
     seen_rows: set[tuple[str, ...]] = set()
-    grafana_rows = list(impact_plan.get("grafana_changes") or []) + list(impact_plan.get("grafana_manual_review") or [])
+    executable_rows = list(impact_plan.get("grafana_changes") or [])
+    manual_rows = list(impact_plan.get("grafana_manual_review") or [])
 
-    _log(log, f"grafana-plan: start impact_rows={len(grafana_rows)}")
+    _log(log, f"grafana-plan: start executable_rows={len(executable_rows)} manual_rows={len(manual_rows)}")
 
-    for row in grafana_rows:
+    for row in manual_rows:
+        review_rows.append(
+            {
+                "grafana_org_id": str(row.get("grafana_org_id") or "").strip(),
+                "dashboard_uid": str(row.get("dashboard_uid") or "").strip(),
+                "dashboard_title": str(row.get("dashboard_title") or "").strip(),
+                "dashboard_url": str(row.get("dashboard_url") or "").strip(),
+                "variable_name": str(row.get("variable_name") or "").strip(),
+                "variable_type": str(row.get("variable_type") or "").strip(),
+                "location_kind": str(row.get("location_kind") or "").strip(),
+                "field_kind": str(row.get("field_kind") or "").strip(),
+                "json_path": str(row.get("json_path") or "").strip(),
+                "old_group": str(row.get("old_group") or "").strip(),
+                "new_group": str(row.get("new_group") or "").strip(),
+                "status": str(row.get("status") or "manual_review"),
+                "message": str(row.get("message") or row.get("details") or "").strip(),
+            }
+        )
+
+    for row in executable_rows:
         org_id = str(row.get("grafana_org_id") or "").strip()
         dashboard_uid = str(row.get("dashboard_uid") or "").strip()
         dashboard_title = str(row.get("dashboard_title") or "").strip()
@@ -652,6 +703,7 @@ def build_grafana_plan_from_impact(
         plan_rows.append(
             {
                 "apply": "",
+                "impact_signature": _impact_signature_from_row(row),
                 "grafana_org_id": org_id,
                 "dashboard_uid": dashboard_uid,
                 "dashboard_title": dashboard_title,
@@ -685,7 +737,9 @@ def build_grafana_plan_from_impact(
         "scope_as": (impact_plan.get("summary") or {}).get("scope_as") or [],
         "scope_env": str((impact_plan.get("summary") or {}).get("scope_env") or "").strip(),
         "scope_gas": (impact_plan.get("summary") or {}).get("scope_gas") or [],
-        "grafana_input_rows": len(grafana_rows),
+        "grafana_input_rows": len(executable_rows) + len(manual_rows),
+        "grafana_executable_rows": len(executable_rows),
+        "grafana_manual_review_rows": len(manual_rows),
         "plan_rows": len(plan_rows),
         "manual_rows": sum(1 for row in plan_rows if str(row.get("manual_required") or "").strip()),
         "review_rows": len(review_rows),
@@ -702,11 +756,11 @@ def build_grafana_plan_from_impact(
 def apply_grafana_plan(
     conn: config.GrafanaConnection,
     selected_rows: Sequence[Dict[str, str]],
-    selected_mappings: Sequence[Dict[str, str]],
+    impact_plan: Dict[str, Any],
     dry_run: bool = True,
     log: Callable[[str], None] | None = None,
 ) -> Dict[str, Any]:
-    allowed_pairs = _allowed_mapping_pairs(selected_mappings)
+    executable_rows_by_signature = _executable_grafana_rows_by_signature(impact_plan)
     grouped: Dict[Tuple[int, str], List[Dict[str, str]]] = defaultdict(list)
     for row in selected_rows:
         grouped[(int(row["grafana_org_id"]), row["dashboard_uid"])].append(row)
@@ -794,17 +848,35 @@ def apply_grafana_plan(
                 continue
 
             change_mode = next(iter(change_modes))
-            invalid_pair = next(
-                (
-                    row
-                    for row in field_rows
-                    if (str(row.get("old_group") or ""), str(row.get("new_group") or "")) not in allowed_pairs
-                ),
-                None,
-            )
-            if invalid_pair is not None:
+            mismatch_row = None
+            mismatch_message = ""
+            for row in field_rows:
+                impact_row = executable_rows_by_signature.get(str(row.get("impact_signature") or ""))
+                if impact_row is None:
+                    mismatch_row = row
+                    mismatch_message = "Grafana plan row is missing in executable impact rows."
+                    break
+                expected_field_path = _root_relative_field_path(str(impact_row.get("json_path") or ""))
+                if (
+                    str(row.get("grafana_org_id") or "").strip() != str(impact_row.get("grafana_org_id") or "").strip()
+                    or str(row.get("dashboard_uid") or "").strip() != str(impact_row.get("dashboard_uid") or "").strip()
+                    or str(row.get("location_kind") or "").strip() != str(impact_row.get("location_kind") or "").strip()
+                    or str(row.get("variable_name") or "").strip() != str(impact_row.get("variable_name") or "").strip()
+                    or str(row.get("panel_id") or "").strip() != str(impact_row.get("panel_id") or "").strip()
+                    or str(row.get("json_path") or "").strip() != str(impact_row.get("json_path") or "").strip()
+                    or str(row.get("field_path") or "").strip() != expected_field_path
+                    or str(row.get("field_kind") or "").strip() != str(impact_row.get("field_kind") or "").strip()
+                    or str(row.get("old_group") or "").strip() != str(impact_row.get("old_group") or "").strip()
+                    or str(row.get("new_group") or "").strip() != str(impact_row.get("new_group") or "").strip()
+                    or str(row.get("change_kind") or "").strip() != str(impact_row.get("change_kind") or "").strip()
+                    or str(row.get("source_value") or "") != str(impact_row.get("source_text") or "")
+                ):
+                    mismatch_row = row
+                    mismatch_message = "Grafana plan row no longer matches executable impact row."
+                    break
+            if mismatch_row is not None:
                 for row in field_rows:
-                    append_result(row, "mapping_mismatch", before_value, before_value, "Grafana plan row is not aligned with selected impact mappings.")
+                    append_result(row, "impact_mismatch", before_value, before_value, mismatch_message)
                 continue
 
             after_value = before_value

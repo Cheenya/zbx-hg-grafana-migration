@@ -317,9 +317,28 @@ def build_impact_plan(
             mapping = mappings_by_oldid.get(group_id)
             if not mapping:
                 continue
+            manual_required, manual_details = _mapping_requires_manual_object_review(mapping)
             new_groupid = str(mapping["new_groupid"] or "").strip()
             old_permission = str(right.get("permission") or "")
             existing_new_permission = str(existing_rights_by_groupid.get(new_groupid) or "")
+            if manual_required:
+                zabbix_changes.append(
+                    {
+                        "object_type": "usergroup",
+                        "object_id": usergroup_id,
+                        "object_name": usergroup_name,
+                        "field_path": f"hostgroup_rights[{index}]",
+                        "change_kind": "manual_review_permission",
+                        "old_group": mapping["old_group"],
+                        "old_groupid": mapping["old_groupid"],
+                        "new_group": mapping["new_group"],
+                        "new_groupid": new_groupid,
+                        "manual_required": "yes",
+                        "details": manual_details or f"permission={old_permission}",
+                    }
+                )
+                changed = True
+                continue
             if existing_new_permission:
                 if existing_new_permission != old_permission:
                     zabbix_changes.append(

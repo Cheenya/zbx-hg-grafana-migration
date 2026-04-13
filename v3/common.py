@@ -455,6 +455,7 @@ def resolve_input_artifact(
     scope_gas: Sequence[str] | None = None,
     org_ids: Sequence[int] | None = None,
     label: str = "artifact",
+    strict_scope_match: bool = False,
 ) -> str:
     explicit = str(configured_path or "").strip()
     if explicit:
@@ -484,7 +485,7 @@ def resolve_input_artifact(
     preferred_stem = ""
     normalized_org_ids = [int(item) for item in (org_ids or [])]
     normalized_scope_as = normalize_values(scope_as)
-    normalized_scope_env = str(scope_env or "").strip()
+    normalized_scope_env = normalize_scope_env(scope_env)
     normalized_scope_gas = normalize_values(scope_gas or [])
 
     if normalized_org_ids:
@@ -497,6 +498,10 @@ def resolve_input_artifact(
         scoped_candidates = [item for item in candidates if item[2].startswith(preferred_stem)]
         if scoped_candidates:
             selected_pool = scoped_candidates
+        elif strict_scope_match:
+            raise RuntimeError(
+                f"{label} not set and no files found for scope stem '{preferred_stem}' in {config.OUTPUT_DIR}"
+            )
 
     selected_pool.sort(key=lambda item: (item[0], item[2]), reverse=True)
     return selected_pool[0][1]

@@ -137,6 +137,7 @@ def main() -> int:
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
         label="backup file",
+        strict_scope_match=True,
     )
 
     connection = config.load_zabbix_connection()

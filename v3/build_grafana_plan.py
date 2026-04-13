@@ -22,10 +22,22 @@ def main() -> int:
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
         label="impact plan JSON",
+        strict_scope_match=True,
     )
 
     impact_plan = load_impact_plan(impact_plan_path)
-    org_ids = [int(value) for value in normalize_values(sorted({row.get("grafana_org_id") for row in (impact_plan.get("grafana_changes") or []) if str(row.get("grafana_org_id") or "").strip()}))]
+    org_ids = [
+        int(value)
+        for value in normalize_values(
+            sorted(
+                {
+                    row.get("grafana_org_id")
+                    for row in list(impact_plan.get("grafana_changes") or []) + list(impact_plan.get("grafana_manual_review") or [])
+                    if str(row.get("grafana_org_id") or "").strip()
+                }
+            )
+        )
+    ]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_xlsx = args.out_xlsx or build_org_artifact_path(config.GRAFANA_PLAN_PREFIX, org_ids, ".xlsx", timestamp=timestamp)
     out_json = args.out_json or build_org_artifact_path(config.GRAFANA_PLAN_PREFIX, org_ids, ".json", timestamp=timestamp)

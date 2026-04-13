@@ -198,6 +198,39 @@ def _assert_method_available(api: ZabbixAPI, method: str, params: Dict[str, Any]
         raise
 
 
+def _required_methods_for_impact_plan(impact_plan: Dict[str, Any]) -> Set[str]:
+    auto_rows = _auto_object_rows(impact_plan)
+    methods_to_check: Set[str] = set()
+    if any(str(row.get("object_id") or "").strip() for row in impact_plan.get("host_enrich_plan") or []):
+        methods_to_check.add("host.massadd")
+    if any(str(row.get("object_type") or "") == "action" for row in auto_rows):
+        methods_to_check.add("action.update")
+    if any(str(row.get("object_type") or "") == "usergroup" for row in auto_rows):
+        methods_to_check.add("usergroup.update")
+    if any(str(row.get("object_type") or "") == "maintenance" for row in auto_rows):
+        methods_to_check.add("maintenance.update")
+    return methods_to_check
+
+
+def prepare_zabbix_apply(
+    api: ZabbixAPI,
+    impact_plan: Dict[str, Any],
+    backup_path: str = "",
+    *,
+    dry_run: bool,
+    log=print,
+) -> None:
+    if dry_run:
+        return
+    for method in sorted(_required_methods_for_impact_plan(impact_plan)):
+        log(f"Checking Zabbix API permissions for {method}")
+        params = {"hosts": [], "groups": []} if method == "host.massadd" else {}
+        _assert_method_available(api, method, params)
+    if backup_path:
+        log(f"Validating backup against impact plan: {backup_path}")
+        _validate_backup_scope(backup_path, impact_plan, api)
+
+
 
 def _build_skipped_rows(impact_plan: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
@@ -636,6 +669,7 @@ def main() -> int:
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
         label="impact plan JSON",
+        strict_scope_match=True,
     )
     impact_plan = load_impact_plan(impact_plan_path)
     summary = impact_plan.get("summary") or {}
@@ -679,11 +713,11 @@ def main() -> int:
             scope_env=scope_env,
             scope_gas=scope_gas,
             label="backup file",
+            strict_scope_match=True,
         )
         if not str(config.SOURCE_BACKUP_FILE or "").strip():
             print(f"Using latest backup file: {backup_path}")
-        print(f"Validating backup against impact plan: {backup_path}")
-        _validate_backup_scope(backup_path, impact_plan, api)
+    prepare_zabbix_apply(api, impact_plan, backup_path, dry_run=dry_run, log=print)
 
     print(f"Applying Zabbix plan from: {impact_plan_path}")
     print(f"Mode: {'DRY-RUN' if dry_run else 'APPLY'}")

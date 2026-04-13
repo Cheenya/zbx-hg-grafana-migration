@@ -24,6 +24,7 @@ def main() -> int:
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
         label="audit JSON",
+        strict_scope_match=True,
     )
     mapping_plan_path = resolve_input_artifact(
         config.SOURCE_MAPPING_PLAN_XLSX,
@@ -33,6 +34,7 @@ def main() -> int:
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
         label="mapping plan XLSX",
+        strict_scope_match=True,
     )
 
     audit_report = load_audit_report(audit_json_path)

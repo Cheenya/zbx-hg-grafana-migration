@@ -12,12 +12,10 @@ from typing import Any, Dict, List, Sequence
 import config
 from api_clients import ZabbixAPI
 from apply_zabbix_plan import (
-    _assert_host_massadd_available,
-    _validate_backup_scope,
     _auto_object_rows,
-    _assert_method_available,
     apply_zabbix_changes,
     load_impact_plan,
+    prepare_zabbix_apply,
     write_apply_xlsx as write_zabbix_apply_xlsx,
 )
 from common import build_artifact_path, build_org_artifact_path, normalize_values, resolve_input_artifact
@@ -116,7 +114,6 @@ def main() -> int:
 
     plan_path = ""
     selected_grafana_rows: List[Dict[str, str]] = []
-    selected_mappings: List[Dict[str, str]] = []
     graf_preview: Dict[str, Any] | None = None
 
     if "zabbix" in targets:
@@ -129,6 +126,7 @@ def main() -> int:
                 scope_env=config.SCOPE_ENV,
                 scope_gas=config.SCOPE_GAS,
                 label="impact plan JSON",
+                strict_scope_match=True,
             )
         except RuntimeError as exc:
             raise RuntimeError(f"{exc}. Run `python build_impact_plan.py` first.") from exc
@@ -147,6 +145,7 @@ def main() -> int:
                     scope_env=zbx_scope_env,
                     scope_gas=zbx_scope_gas,
                     label="backup file",
+                    strict_scope_match=True,
                 )
             except RuntimeError as exc:
                 raise RuntimeError(f"{exc}. Run `python make_backup.py` and `python verify_backup.py` first.") from exc
@@ -162,22 +161,30 @@ def main() -> int:
                     scope_env=config.SCOPE_ENV,
                     scope_gas=config.SCOPE_GAS,
                     label="impact plan JSON",
+                    strict_scope_match=True,
                 )
             except RuntimeError as exc:
                 raise RuntimeError(f"{exc}. Run `python build_impact_plan.py` first.") from exc
             impact_plan = load_impact_plan(impact_plan_path)
+        grafana_org_ids = sorted(
+            {
+                int(str(row.get("grafana_org_id") or "").strip())
+                for row in (impact_plan.get("grafana_changes") or [])
+                if str(row.get("grafana_org_id") or "").strip()
+            }
+        )
         try:
             plan_path = resolve_input_artifact(
                 config.SOURCE_GRAFANA_PLAN_XLSX,
                 config.GRAFANA_PLAN_PREFIX,
                 ".xlsx",
-                org_ids=config.GRAFANA_AUDIT_ORGIDS,
+                org_ids=grafana_org_ids,
                 label="Grafana plan XLSX",
+                strict_scope_match=True,
             )
         except RuntimeError as exc:
             raise RuntimeError(f"{exc}. Run `python build_grafana_plan.py` after `python build_impact_plan.py`.") from exc
         selected_grafana_rows = get_selected_grafana_changes(load_grafana_plan_rows(plan_path))
-        selected_mappings = list((impact_plan or {}).get("selected_mappings") or [])
         graf_preview = _grafana_preview(selected_grafana_rows)
 
     _print_preview(targets, zbx_preview, graf_preview, "APPLY" if not dry_run else "DRY-RUN")
@@ -191,26 +198,7 @@ def main() -> int:
         connection = config.load_zabbix_connection()
         api = ZabbixAPI(connection.api_url, timeout_sec=int(config.HTTP_TIMEOUT_SEC))
         api.authenticate(connection.username, connection.password, connection.api_token)
-        if not dry_run:
-            auto_rows = _auto_object_rows(impact_plan)
-            methods_to_check = set()
-            if any(str(row.get("object_id") or "").strip() for row in impact_plan.get("host_enrich_plan") or []):
-                methods_to_check.add("host.massadd")
-            if any(str(row.get("object_type") or "") == "action" for row in auto_rows):
-                methods_to_check.add("action.update")
-            if any(str(row.get("object_type") or "") == "usergroup" for row in auto_rows):
-                methods_to_check.add("usergroup.update")
-            if any(str(row.get("object_type") or "") == "maintenance" for row in auto_rows):
-                methods_to_check.add("maintenance.update")
-            for method in sorted(methods_to_check):
-                print(f"Checking Zabbix API permissions for {method}")
-                params = {"hosts": [], "groups": []} if method == "host.massadd" else {}
-                if method == "host.massadd":
-                    _assert_host_massadd_available(api)
-                else:
-                    _assert_method_available(api, method, params)
-            print(f"Validating backup for Zabbix apply: {backup_path}")
-            _validate_backup_scope(backup_path, impact_plan, api)
+        prepare_zabbix_apply(api, impact_plan, backup_path, dry_run=dry_run, log=print)
 
         print(f"Running Zabbix {'apply' if not dry_run else 'dry-run'} from: {impact_plan_path}")
         zbx_result = apply_zabbix_changes(api, impact_plan, dry_run=dry_run)
@@ -228,7 +216,7 @@ def main() -> int:
         print(f"Running Grafana {'apply' if not dry_run else 'dry-run'} from: {plan_path}")
         if impact_plan_path:
             print(f"Validating Grafana plan against impact plan: {impact_plan_path}")
-        graf_result = apply_grafana_plan(connection, selected_grafana_rows, selected_mappings, dry_run=dry_run, log=print)
+        graf_result = apply_grafana_plan(connection, selected_grafana_rows, impact_plan or {}, dry_run=dry_run, log=print)
         org_ids = [int(value) for value in normalize_values(sorted({row['grafana_org_id'] for row in selected_grafana_rows}))]
         graf_out_xlsx = build_org_artifact_path(config.GRAFANA_APPLY_PREFIX, org_ids, ".xlsx", timestamp=timestamp)
         graf_out_json = build_org_artifact_path(config.GRAFANA_APPLY_PREFIX, org_ids, ".json", timestamp=timestamp)

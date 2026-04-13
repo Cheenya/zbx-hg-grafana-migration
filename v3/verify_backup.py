@@ -39,6 +39,7 @@ def main() -> int:
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
         label="impact plan JSON",
+        strict_scope_match=True,
     )
     backup_path = resolve_input_artifact(
         config.SOURCE_BACKUP_FILE,
@@ -48,6 +49,7 @@ def main() -> int:
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
         label="backup file",
+        strict_scope_match=True,
     )
 
     if not str(config.SOURCE_IMPACT_PLAN_JSON or "").strip():

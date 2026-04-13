@@ -25,8 +25,8 @@ def main() -> int:
         config.SOURCE_GRAFANA_PLAN_XLSX,
         config.GRAFANA_PLAN_PREFIX,
         ".xlsx",
-        org_ids=config.GRAFANA_AUDIT_ORGIDS,
         label="Grafana plan XLSX",
+        strict_scope_match=False,
     )
     impact_plan_path = resolve_input_artifact(
         config.SOURCE_IMPACT_PLAN_JSON,
@@ -36,12 +36,30 @@ def main() -> int:
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
         label="impact plan JSON",
+        strict_scope_match=True,
     )
 
     plan_rows = load_grafana_plan_rows(plan_path)
     selected_rows = get_selected_grafana_changes(plan_rows)
     impact_plan = load_impact_plan(impact_plan_path)
-    selected_mappings = list(impact_plan.get("selected_mappings") or [])
+    grafana_org_ids = sorted(
+        {
+            int(str(row.get("grafana_org_id") or "").strip())
+            for row in (impact_plan.get("grafana_changes") or [])
+            if str(row.get("grafana_org_id") or "").strip()
+        }
+    )
+    if not str(config.SOURCE_GRAFANA_PLAN_XLSX or "").strip():
+        plan_path = resolve_input_artifact(
+            config.SOURCE_GRAFANA_PLAN_XLSX,
+            config.GRAFANA_PLAN_PREFIX,
+            ".xlsx",
+            org_ids=grafana_org_ids,
+            label="Grafana plan XLSX",
+            strict_scope_match=True,
+        )
+        plan_rows = load_grafana_plan_rows(plan_path)
+        selected_rows = get_selected_grafana_changes(plan_rows)
     org_ids = [int(value) for value in normalize_values(sorted({row["grafana_org_id"] for row in selected_rows}))]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_xlsx = args.out_xlsx or build_org_artifact_path(config.GRAFANA_APPLY_PREFIX, org_ids, ".xlsx", timestamp=timestamp)
@@ -56,7 +74,7 @@ def main() -> int:
     print(f"Applying Grafana plan from: {plan_path}")
     print(f"Validating against impact plan: {impact_plan_path}")
     print(f"Mode: {'DRY-RUN' if dry_run else 'APPLY'}")
-    data = apply_grafana_plan(connection, selected_rows, selected_mappings, dry_run=dry_run, log=print)
+    data = apply_grafana_plan(connection, selected_rows, impact_plan, dry_run=dry_run, log=print)
 
     print(f"Writing Grafana apply XLSX: {out_xlsx}")
     write_grafana_apply_xlsx(data, out_xlsx)

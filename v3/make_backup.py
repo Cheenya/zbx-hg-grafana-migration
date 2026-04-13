@@ -249,6 +249,7 @@ def main() -> int:
         scope_env=config.SCOPE_ENV,
         scope_gas=config.SCOPE_GAS,
         label="impact plan JSON",
+        strict_scope_match=True,
     )
 
     impact_plan = load_impact_plan(impact_plan_path)
