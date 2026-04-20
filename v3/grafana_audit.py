@@ -585,7 +585,11 @@ def collect_grafana_report(
             if dashboard_index == 1 or dashboard_index % 50 == 0:
                 _log(log, f"grafana: progress as={as_value} org_id={org_id_int} dashboard={dashboard_index}/{len(dashboards)} uid={uid}")
 
-            dashboard_payload = api.get_dashboard_by_uid(uid)
+            try:
+                dashboard_payload = api.get_dashboard_by_uid(uid)
+            except RuntimeError as exc:
+                _log(log, f"grafana: skip dashboard as={as_value} org_id={org_id_int} uid={uid}: {exc}")
+                continue
             dashboard = dashboard_payload.get("dashboard") or dashboard_payload
             dashboard_title = str(dashboard.get("title") or dashboard_row.get("title") or "")
             folder_title = str(dashboard_row.get("folderTitle") or "")
@@ -987,6 +991,7 @@ def collect_grafana_org_report(
     variable_rows: List[Dict[str, Any]] = []
     panel_rows: List[Dict[str, Any]] = []
     detail_rows: List[Dict[str, Any]] = []
+    error_rows: List[Dict[str, Any]] = []
 
     normalized_org_ids = [int(value) for value in org_ids]
     _log(log, f"grafana-org: start org_ids={normalized_org_ids}")
@@ -1028,6 +1033,7 @@ def collect_grafana_org_report(
         org_variable_rows: List[Dict[str, Any]] = []
         org_panel_rows: List[Dict[str, Any]] = []
         org_detail_rows: List[Dict[str, Any]] = []
+        org_error_rows: List[Dict[str, Any]] = []
 
         for dashboard_index, dashboard_row in enumerate(dashboards, start=1):
             uid = str(dashboard_row.get("uid") or "").strip()
@@ -1036,7 +1042,24 @@ def collect_grafana_org_report(
             if dashboard_index == 1 or dashboard_index % 50 == 0:
                 _log(log, f"grafana-org: org_id={org_id} dashboard={dashboard_index}/{len(dashboards)} uid={uid}")
 
-            dashboard_payload = api.get_dashboard_by_uid(uid)
+            try:
+                dashboard_payload = api.get_dashboard_by_uid(uid)
+            except RuntimeError as exc:
+                error_message = str(exc)
+                dashboard_url = _build_dashboard_url(conn.base_url, dashboard_row, {}, uid)
+                org_error_rows.append(
+                    {
+                        "grafana_org_id": str(org_id),
+                        "dashboard_uid": uid,
+                        "dashboard_title": str(dashboard_row.get("title") or ""),
+                        "folder_title": str(dashboard_row.get("folderTitle") or ""),
+                        "dashboard_url": dashboard_url,
+                        "status": "dashboard_fetch_failed",
+                        "message": error_message,
+                    }
+                )
+                _log(log, f"grafana-org: skip dashboard org_id={org_id} uid={uid}: {error_message}")
+                continue
             dashboard = dashboard_payload.get("dashboard") or dashboard_payload
             dashboard_title = str(dashboard.get("title") or dashboard_row.get("title") or "")
             folder_title = str(dashboard_row.get("folderTitle") or "")
@@ -1252,9 +1275,10 @@ def collect_grafana_org_report(
         variable_rows.extend(org_variable_rows)
         panel_rows.extend(org_panel_rows)
         detail_rows.extend(org_detail_rows)
+        error_rows.extend(org_error_rows)
         _log(
             log,
-            f"grafana-org: completed org_id={org_id} dashboards_with_zabbix={len(org_dashboard_rows)} variables={len(org_variable_rows)} panels={len(org_panel_rows)} details={len(org_detail_rows)}",
+            f"grafana-org: completed org_id={org_id} dashboards_with_zabbix={len(org_dashboard_rows)} variables={len(org_variable_rows)} panels={len(org_panel_rows)} details={len(org_detail_rows)} errors={len(org_error_rows)}",
         )
 
     summary = {
@@ -1265,6 +1289,7 @@ def collect_grafana_org_report(
         "variable_rows": len(variable_rows),
         "panel_rows": len(panel_rows),
         "detail_rows": len(detail_rows),
+        "error_rows": len(error_rows),
     }
     suggestion_rows = _build_org_grafana_suggestions(detail_rows, mapping_rows)
     summary["suggestion_rows"] = len(suggestion_rows)
@@ -1278,4 +1303,5 @@ def collect_grafana_org_report(
         "panels": panel_rows,
         "details": detail_rows,
         "suggestions": suggestion_rows,
+        "errors": error_rows,
     }

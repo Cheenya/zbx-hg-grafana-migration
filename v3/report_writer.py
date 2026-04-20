@@ -239,6 +239,16 @@ GRAFANA_ORG_SUGGESTION_HEADERS = [
     "manual_required",
 ]
 
+GRAFANA_ORG_ERROR_HEADERS = [
+    "grafana_org_id",
+    "dashboard_uid",
+    "dashboard_title",
+    "folder_title",
+    "dashboard_url",
+    "status",
+    "message",
+]
+
 EXPECTED_GROUP_HEADERS = [
     "group_name",
     "groupid",
@@ -1267,6 +1277,7 @@ def save_grafana_org_json(report: Dict[str, Any], path: str) -> None:
         "panels": report["panels"],
         "details": report["details"],
         "suggestions": report.get("suggestions", []),
+        "errors": report.get("errors", []),
     }
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
@@ -1344,5 +1355,10 @@ def write_grafana_org_workbook(report: Dict[str, Any], out_path: str) -> None:
         },
     )
     _finalize_table_sheet(suggestions_ws, GRAFANA_ORG_SUGGESTION_HEADERS)
+
+    errors_ws = wb.create_sheet("ERRORS")
+    _append_rows(errors_ws, report.get("errors", []), GRAFANA_ORG_ERROR_HEADERS)
+    _apply_hyperlinks(errors_ws, report.get("errors", []), GRAFANA_ORG_ERROR_HEADERS, {"dashboard_url": "dashboard_url"})
+    _finalize_table_sheet(errors_ws, GRAFANA_ORG_ERROR_HEADERS)
 
     wb.save(out_path)

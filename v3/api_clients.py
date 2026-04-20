@@ -106,9 +106,19 @@ class GrafanaAPI:
                 timeout=self.timeout,
                 verify=False,
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                body = response.text.strip()
+                if len(body) > 1000:
+                    body = body[:997] + "..."
+                raise RuntimeError(
+                    f"Grafana API error ({method} {path}): HTTP {response.status_code} {response.reason}; body={body}"
+                ) from exc
             return response.json()
         except Exception as exc:
+            if isinstance(exc, RuntimeError):
+                raise
             raise RuntimeError(f"Grafana API error ({method} {path}): {exc}") from exc
 
     def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
