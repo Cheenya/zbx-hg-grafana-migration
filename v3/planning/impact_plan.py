@@ -7,8 +7,8 @@ from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
 from openpyxl import Workbook  # type: ignore
 
 import config
-from api_clients import ZabbixAPI
-from common import autosize_columns, join_sorted
+from clients.api_clients import ZabbixAPI
+from core.common import autosize_columns, join_sorted
 
 
 def load_audit_report(path: str) -> Dict[str, Any]:

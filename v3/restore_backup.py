@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any, Dict, Set
 
 import config
-from api_clients import ZabbixAPI
-from backup_io import load_backup
-from common import normalize_scope_env, normalize_values, resolve_input_artifact
+from clients.api_clients import ZabbixAPI
+from backup.backup_io import load_backup
+from core.common import normalize_scope_env, normalize_values, resolve_input_artifact
 
 
 def _filter_keys(data: Dict[str, Any], allowed: Set[str]) -> Dict[str, Any]:

@@ -10,10 +10,10 @@ from typing import Any, Callable, Dict, Iterable, List, Sequence, Tuple
 from openpyxl import Workbook, load_workbook  # type: ignore
 
 import config
-from api_clients import GrafanaAPI
-from common import autosize_columns, join_sorted, normalize_values
-from grafana_audit import _field_kind, _iter_strings
-from mapping_plan import is_selected
+from clients.api_clients import GrafanaAPI
+from core.common import autosize_columns, join_sorted, normalize_values
+from audit.grafana_audit import _field_kind, _iter_strings
+from planning.mapping_plan import is_selected
 
 
 GRAFANA_PLAN_HEADERS: List[str] = [

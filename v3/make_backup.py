@@ -6,9 +6,9 @@ from datetime import datetime
 from typing import Any, Dict, Iterable, List, Sequence
 
 import config
-from api_clients import ZabbixAPI
-from backup_io import save_backup
-from backup_model import (
+from clients.api_clients import ZabbixAPI
+from backup.backup_io import save_backup
+from backup.backup_model import (
     ActionBackup,
     BackupData,
     BackupMeta,
@@ -18,7 +18,7 @@ from backup_model import (
     UserBackup,
     UserGroupBackup,
 )
-from common import build_scope_part, normalize_values, resolve_input_artifact
+from core.common import build_scope_part, normalize_values, resolve_input_artifact
 
 
 def load_impact_plan(path: str) -> Dict[str, Any]:

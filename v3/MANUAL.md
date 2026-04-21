@@ -55,17 +55,17 @@ python restore_backup.py
 ## 3. Что лежит в каталоге
 
 - `config.py` — единый конфиг;
-- `api_clients.py` — HTTP-клиенты для Zabbix/Grafana;
-- `common.py` — общие утилиты и генерация путей артефактов;
-- `zabbix_audit.py` — read-only аудит Zabbix;
+- `clients/api_clients.py` — HTTP-клиенты для Zabbix/Grafana;
+- `core/common.py` — общие утилиты и генерация путей артефактов;
+- `audit/zabbix_audit.py` — read-only аудит Zabbix;
 - `build_as_queue.py` — алфавитный список `AS` и discovery-кейсов;
-- `grafana_audit.py` — read-only аудит Grafana;
+- `audit/grafana_audit.py` — read-only аудит Grafana;
 - `grafana_org_audit.py` — org-level аудит Grafana/Zabbix datasource usage;
-- `grafana_plan.py` — build/apply плана изменений Grafana variables;
-- `report_writer.py` — запись audit workbook/json;
-- `mapping_plan.py` — запись/чтение `mapping_plan.xlsx`;
-- `impact_plan.py` — построение и запись `impact_plan`;
-- `backup_model.py` / `backup_io.py` — модель и I/O backup;
+- `planning/grafana_plan.py` — build/apply плана изменений Grafana variables;
+- `audit/report_writer.py` — запись audit workbook/json;
+- `planning/mapping_plan.py` — запись/чтение `mapping_plan.xlsx`;
+- `planning/impact_plan.py` — построение и запись `impact_plan`;
+- `backup/backup_model.py` / `backup/backup_io.py` — модель и I/O backup;
 - `README.md` — краткая памятка;
 - `MANUAL.md` — этот документ.
 

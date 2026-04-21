@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Sequence, Set
 from openpyxl import Workbook  # type: ignore
 
 import config
-from api_clients import ZabbixAPI
-from common import autosize_columns, canonical_env_value, join_sorted, sample_host_names
+from clients.api_clients import ZabbixAPI
+from core.common import autosize_columns, canonical_env_value, join_sorted, sample_host_names
 
 
 OUTPUT_PREFIX = "env_variants"

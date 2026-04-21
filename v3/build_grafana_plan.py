@@ -4,8 +4,8 @@ import argparse
 from datetime import datetime
 
 import config
-from common import build_org_artifact_path, normalize_values, resolve_input_artifact
-from grafana_plan import build_grafana_plan_from_impact, load_impact_plan, save_grafana_plan_json, write_grafana_plan_xlsx
+from core.common import build_org_artifact_path, normalize_values, resolve_input_artifact
+from planning.grafana_plan import build_grafana_plan_from_impact, load_impact_plan, save_grafana_plan_json, write_grafana_plan_xlsx
 
 
 def main() -> int:

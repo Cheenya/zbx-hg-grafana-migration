@@ -7,8 +7,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence
 from openpyxl import Workbook  # type: ignore
 from openpyxl.styles import Font, PatternFill  # type: ignore
 
-from common import autosize_columns, join_sorted, parse_standard_group
-from mapping_plan import MAPPING_PLAN_HEADERS
+from core.common import autosize_columns, join_sorted, parse_standard_group
+from planning.mapping_plan import MAPPING_PLAN_HEADERS
 
 
 MISMATCH_OLDORG_HEADERS = [

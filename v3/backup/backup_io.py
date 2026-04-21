@@ -4,7 +4,7 @@ import gzip
 import json
 from dataclasses import asdict
 
-from backup_model import (
+from backup.backup_model import (
     ActionBackup,
     BackupData,
     BackupMeta,

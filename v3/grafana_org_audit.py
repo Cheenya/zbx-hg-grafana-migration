@@ -5,10 +5,10 @@ from datetime import datetime
 from typing import TextIO
 
 import config
-from common import build_org_artifact_path, resolve_input_artifact
-from grafana_audit import collect_grafana_org_report
-from mapping_plan import load_mapping_plan_rows
-from report_writer import save_grafana_org_json, write_grafana_org_workbook
+from core.common import build_org_artifact_path, resolve_input_artifact
+from audit.grafana_audit import collect_grafana_org_report
+from planning.mapping_plan import load_mapping_plan_rows
+from audit.report_writer import save_grafana_org_json, write_grafana_org_workbook
 
 
 class AuditLogger:
@@ -60,6 +60,7 @@ def main() -> int:
                 scope_env=config.SCOPE_ENV,
                 scope_gas=config.SCOPE_GAS,
                 label="mapping plan XLSX",
+                strict_scope_match=True,
             )
             mapping_rows = load_mapping_plan_rows(mapping_plan_path)
             logger.log(f"grafana-org-audit: using mapping plan {mapping_plan_path} rows={len(mapping_rows)}")

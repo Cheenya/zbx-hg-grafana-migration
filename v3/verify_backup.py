@@ -4,8 +4,8 @@ import json
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 import config
-from backup_io import load_backup
-from common import resolve_input_artifact
+from backup.backup_io import load_backup
+from core.common import resolve_input_artifact
 
 
 def load_impact_plan(path: str) -> Dict[str, Any]:

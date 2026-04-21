@@ -12,8 +12,8 @@ from typing import Any, Dict, List
 from openpyxl import Workbook  # type: ignore
 
 import config
-from api_clients import ZabbixAPI
-from common import autosize_columns, build_artifact_path
+from clients.api_clients import ZabbixAPI
+from core.common import autosize_columns, build_artifact_path
 
 
 METHODS_TO_PROBE = (

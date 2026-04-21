@@ -492,6 +492,8 @@ def resolve_input_artifact(
         preferred_stem = f"{prefix}_{build_org_scope_part(normalized_org_ids)}_"
     elif normalized_scope_as or normalized_scope_env or normalized_scope_gas:
         preferred_stem = f"{prefix}_{build_scope_part(normalized_scope_as, normalized_scope_env, normalized_scope_gas)}_"
+    elif strict_scope_match:
+        raise RuntimeError(f"{label} not set and strict scope match requires explicit scope or org ids")
 
     selected_pool = candidates
     if preferred_stem:
@@ -513,7 +515,7 @@ def resolve_scope_org_pairs(scope_as: Sequence[str], orgids: Sequence[int]) -> L
     if not as_values:
         return []
     if not normalized_orgids:
-        return [(as_value, 0) for as_value in as_values]
+        raise RuntimeError("config.py GRAFANA_ORGIDS must be set when ENABLE_GRAFANA is enabled.")
     if len(normalized_orgids) == 1:
         return [(as_value, normalized_orgids[0]) for as_value in as_values]
     if len(normalized_orgids) != len(as_values):

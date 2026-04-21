@@ -5,8 +5,8 @@ from time import time
 from typing import Any, Callable, Dict, List, Sequence, Set, Tuple
 
 import config
-from api_clients import ZabbixAPI
-from common import (
+from clients.api_clients import ZabbixAPI
+from core.common import (
     build_expected_hostgroups,
     canonical_env_value,
     detect_discovery_host,

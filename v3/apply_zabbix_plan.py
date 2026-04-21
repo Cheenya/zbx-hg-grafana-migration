@@ -13,9 +13,9 @@ from typing import Any, Dict, List, Sequence, Set, Tuple
 from openpyxl import Workbook  # type: ignore
 
 import config
-from api_clients import ZabbixAPI
-from backup_io import load_backup
-from common import (
+from clients.api_clients import ZabbixAPI
+from backup.backup_io import load_backup
+from core.common import (
     autosize_columns,
     build_artifact_path,
     join_sorted,
@@ -23,7 +23,7 @@ from common import (
     normalize_values,
     resolve_input_artifact,
 )
-from impact_plan import fetch_actions, fetch_maintenances, fetch_usergroups
+from planning.impact_plan import fetch_actions, fetch_maintenances, fetch_usergroups
 
 
 _PATH_TOKEN_RX = re.compile(r"([^\.\[]+)|\[(\d+)\]")

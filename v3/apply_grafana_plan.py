@@ -5,8 +5,8 @@ import json
 from datetime import datetime
 
 import config
-from common import build_org_artifact_path, normalize_values, resolve_input_artifact
-from grafana_plan import (
+from core.common import build_org_artifact_path, normalize_values, resolve_input_artifact
+from planning.grafana_plan import (
     apply_grafana_plan,
     get_selected_grafana_changes,
     load_grafana_plan_rows,
@@ -21,13 +21,6 @@ def main() -> int:
     parser.add_argument("--out-json", dest="out_json", help="Path to Grafana apply JSON")
     args = parser.parse_args()
 
-    plan_path = resolve_input_artifact(
-        config.SOURCE_GRAFANA_PLAN_XLSX,
-        config.GRAFANA_PLAN_PREFIX,
-        ".xlsx",
-        label="Grafana plan XLSX",
-        strict_scope_match=False,
-    )
     impact_plan_path = resolve_input_artifact(
         config.SOURCE_IMPACT_PLAN_JSON,
         config.IMPACT_PLAN_PREFIX,
@@ -39,8 +32,6 @@ def main() -> int:
         strict_scope_match=True,
     )
 
-    plan_rows = load_grafana_plan_rows(plan_path)
-    selected_rows = get_selected_grafana_changes(plan_rows)
     impact_plan = load_impact_plan(impact_plan_path)
     grafana_org_ids = sorted(
         {
@@ -49,17 +40,16 @@ def main() -> int:
             if str(row.get("grafana_org_id") or "").strip()
         }
     )
-    if not str(config.SOURCE_GRAFANA_PLAN_XLSX or "").strip():
-        plan_path = resolve_input_artifact(
-            config.SOURCE_GRAFANA_PLAN_XLSX,
-            config.GRAFANA_PLAN_PREFIX,
-            ".xlsx",
-            org_ids=grafana_org_ids,
-            label="Grafana plan XLSX",
-            strict_scope_match=True,
-        )
-        plan_rows = load_grafana_plan_rows(plan_path)
-        selected_rows = get_selected_grafana_changes(plan_rows)
+    plan_path = resolve_input_artifact(
+        config.SOURCE_GRAFANA_PLAN_XLSX,
+        config.GRAFANA_PLAN_PREFIX,
+        ".xlsx",
+        org_ids=grafana_org_ids,
+        label="Grafana plan XLSX",
+        strict_scope_match=True,
+    )
+    plan_rows = load_grafana_plan_rows(plan_path)
+    selected_rows = get_selected_grafana_changes(plan_rows)
     org_ids = [int(value) for value in normalize_values(sorted({row["grafana_org_id"] for row in selected_rows}))]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_xlsx = args.out_xlsx or build_org_artifact_path(config.GRAFANA_APPLY_PREFIX, org_ids, ".xlsx", timestamp=timestamp)

@@ -5,11 +5,11 @@ from datetime import datetime
 from typing import TextIO
 
 import config
-from api_clients import ZabbixAPI
-from common import build_artifact_path, normalize_scope_env, normalize_values, resolve_scope_org_pairs
-from grafana_audit import collect_grafana_report
-from report_writer import save_inventory_json, write_grafana_workbook, write_mapping_workbook, write_workbook
-from zabbix_audit import build_scope_report
+from clients.api_clients import ZabbixAPI
+from core.common import build_artifact_path, normalize_scope_env, normalize_values, resolve_scope_org_pairs
+from audit.grafana_audit import collect_grafana_report
+from audit.report_writer import save_inventory_json, write_grafana_workbook, write_mapping_workbook, write_workbook
+from audit.zabbix_audit import build_scope_report
 
 
 class AuditLogger:

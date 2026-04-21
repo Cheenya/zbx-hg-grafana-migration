@@ -4,10 +4,10 @@ import argparse
 from datetime import datetime
 
 import config
-from api_clients import ZabbixAPI
-from common import build_artifact_path, normalize_values, resolve_input_artifact
-from impact_plan import build_impact_plan, load_audit_report, save_impact_plan_json, write_impact_plan_xlsx
-from mapping_plan import get_selected_mappings, load_mapping_plan_rows
+from clients.api_clients import ZabbixAPI
+from core.common import build_artifact_path, normalize_values, resolve_input_artifact
+from planning.impact_plan import build_impact_plan, load_audit_report, save_impact_plan_json, write_impact_plan_xlsx
+from planning.mapping_plan import get_selected_mappings, load_mapping_plan_rows
 
 
 def main() -> int:

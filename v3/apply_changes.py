@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Sequence
 
 import config
-from api_clients import ZabbixAPI
+from clients.api_clients import ZabbixAPI
 from apply_zabbix_plan import (
     _auto_object_rows,
     apply_zabbix_changes,
@@ -18,8 +18,8 @@ from apply_zabbix_plan import (
     prepare_zabbix_apply,
     write_apply_xlsx as write_zabbix_apply_xlsx,
 )
-from common import build_artifact_path, build_org_artifact_path, normalize_values, resolve_input_artifact
-from grafana_plan import (
+from core.common import build_artifact_path, build_org_artifact_path, normalize_values, resolve_input_artifact
+from planning.grafana_plan import (
     apply_grafana_plan,
     get_selected_grafana_changes,
     load_grafana_plan_rows,

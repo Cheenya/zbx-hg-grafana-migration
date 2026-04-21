@@ -6,8 +6,8 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Sequence, Set, Tuple
 
 import config
-from api_clients import GrafanaAPI
-from common import join_sorted, normalize_values
+from clients.api_clients import GrafanaAPI
+from core.common import join_sorted, normalize_values
 
 
 OLD_RX = re.compile(r"\b(?:BNK|DOM)-[A-Za-z0-9_.:-]+(?:-[A-Za-z0-9_.:-]+)*\b")

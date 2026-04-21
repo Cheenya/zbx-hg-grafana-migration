@@ -9,8 +9,8 @@ from typing import Any, Dict, List
 from openpyxl import Workbook  # type: ignore
 
 import config
-from api_clients import ZabbixAPI
-from common import (
+from clients.api_clients import ZabbixAPI
+from core.common import (
     autosize_columns,
     canonical_env_value,
     detect_discovery_host,
@@ -22,7 +22,7 @@ from common import (
     resolve_os_family,
     sample_host_names,
 )
-from zabbix_audit import fetch_hosts
+from audit.zabbix_audit import fetch_hosts
 
 
 QUEUE_HEADERS = [

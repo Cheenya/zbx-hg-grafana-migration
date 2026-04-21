@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Sequence
 
 from openpyxl import Workbook, load_workbook  # type: ignore
 
-from common import autosize_columns
+from core.common import autosize_columns
 
 
 MAPPING_PLAN_HEADERS: List[str] = [
