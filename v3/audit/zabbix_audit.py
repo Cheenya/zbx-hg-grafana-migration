@@ -839,6 +839,7 @@ def _object_candidate_state(
     mapping_candidates: Dict[str, List[Dict[str, Any]]],
 ) -> Dict[str, bool]:
     has_old_reference = bool(old_groupids)
+    has_candidate_already_present = False
     has_pending_add = False
     has_missing_target = False
     has_manual_issue = False
@@ -859,11 +860,14 @@ def _object_candidate_state(
             if not target_exists:
                 has_missing_target = True
                 continue
+            if new_groupid and new_groupid in object_groupids:
+                has_candidate_already_present = True
             if new_groupid and new_groupid not in object_groupids:
                 has_pending_add = True
 
     return {
         "has_old_reference": has_old_reference,
+        "has_candidate_already_present": has_candidate_already_present,
         "has_pending_add": has_pending_add,
         "has_missing_target": has_missing_target,
         "has_manual_issue": has_manual_issue,
@@ -907,6 +911,7 @@ def _preview_rows_for_object(
                 "object_has_candidate_new": "",
                 "include_reason": include_reason,
                 "manual_required": "yes",
+                "reference_status": "no_candidate",
                 "host_action": "",
                 "hosts_need_add_new": "",
                 "hosts_already_have_new": "",
@@ -915,6 +920,14 @@ def _preview_rows_for_object(
         return rows
 
     for candidate in candidates:
+        object_has_candidate_new = "yes" if str(candidate.get("new_groupid") or "") in object_groupids else ""
+        reference_status = ""
+        if object_has_candidate_new:
+            reference_status = "old_and_new_present"
+        elif str(candidate.get("target_exists") or "").strip().lower() == "yes":
+            reference_status = "needs_replace_or_add"
+        elif str(candidate.get("new_group") or "").strip():
+            reference_status = "missing_target"
         rows.append(
             {
                 "object_type": object_type,
@@ -931,9 +944,10 @@ def _preview_rows_for_object(
                 "target_kind": str(candidate.get("target_kind") or ""),
                 "target_exists": str(candidate.get("target_exists") or ""),
                 "mapping_status": str(candidate.get("status") or ""),
-                "object_has_candidate_new": "yes" if str(candidate.get("new_groupid") or "") in object_groupids else "",
+                "object_has_candidate_new": object_has_candidate_new,
                 "include_reason": include_reason,
-                "manual_required": str(candidate.get("manual_required") or ""),
+                "manual_required": "yes" if object_has_candidate_new else str(candidate.get("manual_required") or ""),
+                "reference_status": reference_status,
                 "host_action": str(candidate.get("host_action") or ""),
                 "hosts_need_add_new": candidate.get("hosts_need_add_new", ""),
                 "hosts_already_have_new": candidate.get("hosts_already_have_new", ""),
@@ -1589,6 +1603,11 @@ def build_scope_report(
                     for candidate in (mapping_candidates.get(old_groupid) or [])
                     if str(candidate.get("new_groupid") or "") in action_all_groupids
                 ),
+                "reference_status": (
+                    "old_and_new_present"
+                    if action_state.get("has_candidate_already_present")
+                    else ("needs_replace_or_add" if action_state.get("has_pending_add") else "")
+                ),
                 "include_reason": f"old_groups={join_sorted(groupid_to_name.get(group_id, group_id) for group_id in matched_old_ids)}",
                 "recipient_usergroups": join_sorted(action_usergroup_ids),
                 "recipient_users": join_sorted(_user_display(users_by_id[user_id]) for user_id in action_user_ids if user_id in users_by_id),
@@ -1716,6 +1735,11 @@ def build_scope_report(
                     for old_groupid in matched_ids
                     for candidate in (mapping_candidates.get(old_groupid) or [])
                     if str(candidate.get("new_groupid") or "") in maintenance_groupids
+                ),
+                "reference_status": (
+                    "old_and_new_present"
+                    if maintenance_state.get("has_candidate_already_present")
+                    else ("needs_replace_or_add" if maintenance_state.get("has_pending_add") else "")
                 ),
                 "include_reason": f"old_groups={join_sorted(groupid_to_name.get(group_id, group_id) for group_id in matched_ids)}",
                 "active_since": str(maintenance.get("active_since") or ""),

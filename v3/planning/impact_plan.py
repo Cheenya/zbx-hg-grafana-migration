@@ -8,7 +8,7 @@ from openpyxl import Workbook  # type: ignore
 
 import config
 from clients.api_clients import ZabbixAPI
-from core.common import autosize_columns, join_sorted
+from core.common import autosize_columns, extract_action_groupids, join_sorted
 
 
 def load_audit_report(path: str) -> Dict[str, Any]:
@@ -211,6 +211,18 @@ def _mapping_requires_manual_object_review(mapping: Dict[str, str]) -> tuple[boo
     return False, ""
 
 
+def _append_manual_detail(existing: str, extra: str) -> str:
+    base = str(existing or "").strip()
+    addition = str(extra or "").strip()
+    if not addition:
+        return base
+    if not base:
+        return addition
+    if addition in base:
+        return base
+    return f"{base}; {addition}"
+
+
 def build_impact_plan(
     api: ZabbixAPI,
     audit_report: Dict[str, Any],
@@ -246,6 +258,8 @@ def build_impact_plan(
         action_id = str(action.get("actionid") or "")
         action_name = str(action.get("name") or "")
         action_changed = False
+        condition_ids, operation_ids = extract_action_groupids(action)
+        action_all_groupids = condition_ids.union(operation_ids)
 
         for index, condition in enumerate((action.get("filter") or {}).get("conditions") or []):
             if str(condition.get("conditiontype") or "") != "0":
@@ -255,6 +269,10 @@ def build_impact_plan(
             if not mapping:
                 continue
             manual_required, manual_details = _mapping_requires_manual_object_review(mapping)
+            new_groupid = str(mapping["new_groupid"] or "").strip()
+            if new_groupid and new_groupid in action_all_groupids:
+                manual_required = True
+                manual_details = _append_manual_detail(manual_details, "target group already present elsewhere in action")
             zabbix_changes.append(
                 {
                     "object_type": "action",
@@ -265,7 +283,7 @@ def build_impact_plan(
                     "old_group": mapping["old_group"],
                     "old_groupid": mapping["old_groupid"],
                     "new_group": mapping["new_group"],
-                    "new_groupid": mapping["new_groupid"],
+                    "new_groupid": new_groupid,
                     "manual_required": "yes" if manual_required else "",
                     "details": manual_details or "condition hostgroup",
                 }
@@ -280,6 +298,10 @@ def build_impact_plan(
             if not mapping:
                 continue
             manual_required, manual_details = _mapping_requires_manual_object_review(mapping)
+            new_groupid = str(mapping["new_groupid"] or "").strip()
+            if new_groupid and new_groupid in action_all_groupids:
+                manual_required = True
+                manual_details = _append_manual_detail(manual_details, "target group already present elsewhere in action")
             zabbix_changes.append(
                 {
                     "object_type": "action",
@@ -290,7 +312,7 @@ def build_impact_plan(
                     "old_group": mapping["old_group"],
                     "old_groupid": mapping["old_groupid"],
                     "new_group": mapping["new_group"],
-                    "new_groupid": mapping["new_groupid"],
+                    "new_groupid": new_groupid,
                     "manual_required": "yes" if manual_required else "",
                     "details": manual_details or "operation group reference",
                 }
@@ -381,12 +403,21 @@ def build_impact_plan(
         maintenance_id = str(maintenance.get("maintenanceid") or "")
         maintenance_name = str(maintenance.get("name") or "")
         changed = False
+        maintenance_groupids = {
+            str(group.get("groupid") or "")
+            for group in (maintenance.get("groups") or [])
+            if str(group.get("groupid") or "").strip()
+        }
         for index, group in enumerate(maintenance.get("groups") or []):
             group_id = str(group.get("groupid") or "")
             mapping = mappings_by_oldid.get(group_id)
             if not mapping:
                 continue
             manual_required, manual_details = _mapping_requires_manual_object_review(mapping)
+            new_groupid = str(mapping["new_groupid"] or "").strip()
+            if new_groupid and new_groupid in maintenance_groupids:
+                manual_required = True
+                manual_details = _append_manual_detail(manual_details, "target group already present in maintenance")
             zabbix_changes.append(
                 {
                     "object_type": "maintenance",
@@ -397,7 +428,7 @@ def build_impact_plan(
                     "old_group": mapping["old_group"],
                     "old_groupid": mapping["old_groupid"],
                     "new_group": mapping["new_group"],
-                    "new_groupid": mapping["new_groupid"],
+                    "new_groupid": new_groupid,
                     "manual_required": "yes" if manual_required else "",
                     "details": manual_details or "maintenance group reference",
                 }

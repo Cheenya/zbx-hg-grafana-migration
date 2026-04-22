@@ -354,6 +354,7 @@ OBJECT_PREVIEW_HEADERS = [
     "object_name",
     "where_found",
     "field_paths",
+    "reference_status",
     "current_groups",
     "add_env_groups",
     "add_as_groups",
@@ -369,6 +370,7 @@ ACTION_VIEW_HEADERS = [
     "name",
     "status",
     "where_found",
+    "reference_status",
     "current_groups",
     "add_env_groups",
     "add_as_groups",
@@ -402,6 +404,7 @@ USERGROUP_VIEW_HEADERS = [
 MAINTENANCE_VIEW_HEADERS = [
     "maintenanceid",
     "name",
+    "reference_status",
     "current_groups",
     "add_env_groups",
     "add_as_groups",
@@ -500,6 +503,7 @@ def _apply_kind_column_fills(ws, headers: Sequence[str]) -> None:
         "expected_os_groups": OS_FILL,
         "OS_FAMILY": OS_FILL,
         "missing_in_zabbix": ALERT_FILL,
+        "reference_status": ALERT_FILL,
         "manual_required": ALERT_FILL,
         "reason": ALERT_FILL,
         "unresolved_reasons": ALERT_FILL,
@@ -746,6 +750,7 @@ def _build_preview_index(rows: Sequence[Dict[str, Any]]) -> Dict[tuple[str, str]
                 "object_name": str(row.get("object_name") or ""),
                 "where_found": set(),
                 "field_paths": set(),
+                "reference_status": set(),
                 "current_groups": set(),
                 "add_env_groups": set(),
                 "add_as_groups": set(),
@@ -765,6 +770,9 @@ def _build_preview_index(rows: Sequence[Dict[str, Any]]) -> Dict[tuple[str, str]
         field_path = str(row.get("field_path") or "").strip()
         if field_path:
             entry["field_paths"].add(field_path)
+        reference_status = str(row.get("reference_status") or "").strip()
+        if reference_status:
+            entry["reference_status"].add(reference_status)
         include_reason = str(row.get("include_reason") or "").strip()
         if include_reason:
             entry["include_reason"].add(include_reason)
@@ -799,6 +807,7 @@ def _preview_entry_to_row(entry: Dict[str, Any]) -> Dict[str, Any]:
         "object_name": entry["object_name"],
         "where_found": join_sorted(entry["where_found"]),
         "field_paths": join_sorted(entry["field_paths"]),
+        "reference_status": join_sorted(entry["reference_status"]),
         "current_groups": join_sorted(entry["current_groups"]),
         "add_env_groups": join_sorted(entry["add_env_groups"]),
         "add_as_groups": join_sorted(entry["add_as_groups"]),
@@ -826,6 +835,7 @@ def _build_action_view_rows(action_rows: Sequence[Dict[str, Any]], preview_rows:
                 "name": row.get("name", ""),
                 "status": row.get("status", ""),
                 "where_found": row.get("where_found", ""),
+                "reference_status": row.get("reference_status", join_sorted(entry.get("reference_status", []))),
                 "current_groups": _merge_group_lists(row.get("matched_group_names"), row.get("candidate_new_group_names_present")),
                 "add_env_groups": join_sorted(entry.get("add_env_groups", [])),
                 "add_as_groups": join_sorted(entry.get("add_as_groups", [])),
@@ -880,6 +890,7 @@ def _build_maintenance_view_rows(maintenance_rows: Sequence[Dict[str, Any]], pre
             {
                 "maintenanceid": row.get("maintenanceid", ""),
                 "name": row.get("name", ""),
+                "reference_status": row.get("reference_status", join_sorted(entry.get("reference_status", []))),
                 "current_groups": _merge_group_lists(row.get("matched_group_names"), row.get("candidate_new_group_names_present")),
                 "add_env_groups": join_sorted(entry.get("add_env_groups", [])),
                 "add_as_groups": join_sorted(entry.get("add_as_groups", [])),
