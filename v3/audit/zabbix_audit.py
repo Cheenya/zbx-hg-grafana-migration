@@ -838,6 +838,7 @@ def _object_candidate_state(
     object_groupids: Set[str],
     mapping_candidates: Dict[str, List[Dict[str, Any]]],
 ) -> Dict[str, bool]:
+    has_old_reference = bool(old_groupids)
     has_pending_add = False
     has_missing_target = False
     has_manual_issue = False
@@ -862,6 +863,7 @@ def _object_candidate_state(
                 has_pending_add = True
 
     return {
+        "has_old_reference": has_old_reference,
         "has_pending_add": has_pending_add,
         "has_missing_target": has_missing_target,
         "has_manual_issue": has_manual_issue,
@@ -1625,6 +1627,8 @@ def build_scope_report(
 
         usergroup_id = str(usergroup.get("usrgrpid") or "")
         include_reasons: List[str] = []
+        if touched_old_rights:
+            include_reasons.append("old_hostgroup_rights")
         if matching_filters:
             include_reasons.append("matching_tag_filters")
         if usergroup_id in recipient_usergroup_ids:
