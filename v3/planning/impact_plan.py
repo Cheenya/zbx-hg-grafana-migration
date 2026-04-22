@@ -25,40 +25,35 @@ def _is_executable_grafana_field(location_kind: str, json_path: str, field_kind:
     return False
 
 
-def _grafana_row_key(row: Dict[str, Any]) -> Tuple[str, str, str, str, str, str, str]:
-    return (
-        str(row.get("grafana_org_id") or "").strip(),
-        str(row.get("dashboard_uid") or "").strip(),
-        str(row.get("location_kind") or "").strip(),
-        str(row.get("json_path") or "").strip(),
-        str(row.get("variable_name") or "").strip(),
-        str(row.get("panel_id") or "").strip(),
-        str(row.get("source_text") or ""),
-    )
-
-
-def _pick_grafana_suggestion(
+def _pick_grafana_mapping_from_selected(
     row: Dict[str, Any],
-    suggestions_by_key: Dict[Tuple[str, str, str, str, str, str, str], List[Dict[str, Any]]],
-) -> Dict[str, Any] | None:
-    candidates = suggestions_by_key.get(_grafana_row_key(row)) or []
-    unique: Dict[Tuple[str, str], Dict[str, Any]] = {}
-    priority = {
-        "exact_match": 0,
-        "manual_pattern_single": 1,
-        "no_target": 2,
-        "manual_pattern_ambiguous": 3,
-        "manual_pattern_unresolved": 4,
-    }
-    for candidate in sorted(candidates, key=lambda item: priority.get(str(item.get("suggestion_status") or ""), 99)):
-        old_group = str(candidate.get("old_group") or candidate.get("suggested_old_group") or "").strip()
-        new_group = str(candidate.get("new_group") or candidate.get("suggested_new_group") or "").strip()
-        if not old_group:
-            continue
-        unique.setdefault((old_group, new_group), candidate)
-    if len(unique) == 1:
-        return next(iter(unique.values()))
-    return None
+    mappings_by_oldname: Dict[str, Dict[str, Any]],
+) -> Tuple[str, str, str]:
+    match_type = str(row.get("match_type") or "").strip()
+    matched_string = str(row.get("matched_string") or "")
+    source_text = str(row.get("source_text") or "")
+
+    if match_type == "OLD":
+        mapping = mappings_by_oldname.get(matched_string.strip())
+        if not mapping:
+            return "", "", "no_mapping"
+        return str(mapping.get("old_group") or "").strip(), str(mapping.get("new_group") or "").strip(), "exact_match"
+
+    if match_type != "OLD_PATTERN":
+        return "", "", ""
+
+    matched_old_groups = sorted(
+        old_group
+        for old_group in mappings_by_oldname
+        if old_group and old_group in source_text
+    )
+    if len(matched_old_groups) == 1:
+        old_group = matched_old_groups[0]
+        mapping = mappings_by_oldname.get(old_group) or {}
+        return old_group, str(mapping.get("new_group") or "").strip(), "manual_pattern_single"
+    if matched_old_groups:
+        return "", "", "manual_pattern_ambiguous"
+    return "", "", "manual_pattern_unresolved"
 
 
 def load_audit_report(path: str) -> Dict[str, Any]:
@@ -291,10 +286,6 @@ def build_impact_plan(
 
     mappings_by_oldid = {str(item["old_groupid"]): dict(item) for item in selected_mappings}
     mappings_by_oldname = {str(item["old_group"]): dict(item) for item in selected_mappings}
-    grafana_suggestions_by_key: Dict[Tuple[str, str, str, str, str, str, str], List[Dict[str, Any]]] = {}
-    for suggestion in audit_report.get("grafana_suggestions") or []:
-        grafana_suggestions_by_key.setdefault(_grafana_row_key(suggestion), []).append(dict(suggestion))
-
     actions = fetch_actions(api, inventory.get("actionids") or [])
     usergroups = fetch_usergroups(api, inventory.get("usergroupids") or [])
     maintenances = fetch_maintenances(api, inventory.get("maintenanceids") or [])
@@ -536,11 +527,10 @@ def build_impact_plan(
         field_kind = str(row.get("field_kind") or "")
         json_path = str(row.get("json_path") or "")
         executable_location = _is_executable_grafana_field(location_kind, json_path, field_kind)
-        suggestion = _pick_grafana_suggestion(row, grafana_suggestions_by_key)
+        resolved_old_group, resolved_new_group, suggestion_status = _pick_grafana_mapping_from_selected(row, mappings_by_oldname)
 
         if match_type == "OLD":
-            resolved_old_group = str((suggestion or {}).get("old_group") or matched_string).strip()
-            mapping = mappings_by_oldname.get(resolved_old_group)
+            mapping = mappings_by_oldname.get(resolved_old_group or matched_string.strip())
             if not mapping:
                 continue
             out_row = {
@@ -566,7 +556,7 @@ def build_impact_plan(
                 "matched_string": matched_string,
                 "pattern_key": str(row.get("pattern_key") or ""),
                 "manual_required": "",
-                "details": str((suggestion or {}).get("suggestion_status") or ""),
+                "details": suggestion_status,
             }
             if executable_location:
                 grafana_changes.append(out_row)
@@ -583,10 +573,10 @@ def build_impact_plan(
         if match_type != "OLD_PATTERN":
             continue
 
-        if suggestion:
-            old_group = str(suggestion.get("old_group") or suggestion.get("suggested_old_group") or "").strip()
-            new_group = str(suggestion.get("new_group") or suggestion.get("suggested_new_group") or "").strip()
-            details = str(suggestion.get("suggestion_status") or "pattern match requires manual review").strip()
+        if resolved_old_group:
+            old_group = resolved_old_group
+            new_group = resolved_new_group
+            details = suggestion_status or "pattern match requires manual review"
         else:
             related = [
                 mapping
