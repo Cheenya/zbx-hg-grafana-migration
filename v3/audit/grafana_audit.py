@@ -180,6 +180,20 @@ def _is_group_relevant_context(json_path: str, location_kind: str, field_kind: s
     return False
 
 
+def _is_executable_scoped_change(location_kind: str, json_path: str, field_kind: str) -> bool:
+    lower_path = str(json_path or "").lower()
+    lower_kind = str(field_kind or "").strip().lower()
+    if any(marker in lower_path for marker in HOST_FILTER_MARKERS):
+        return False
+    if location_kind == "variable":
+        if lower_kind in {"query", "definition", "regex"}:
+            return True
+        return any(marker in lower_path for marker in (".current.", ".options["))
+    if location_kind == "panel":
+        return ".targets[" in lower_path and ".group.filter" in lower_path
+    return False
+
+
 def _build_dashboard_url(base_url: str, search_row: Dict[str, Any], dashboard_payload: Dict[str, Any], uid: str) -> str:
     meta = dashboard_payload.get("meta") or {}
     raw_path = str(meta.get("url") or search_row.get("url") or "").strip()
@@ -453,6 +467,24 @@ def _build_scoped_grafana_views(
                 "suggested_value": suggested_value,
                 "suggestion_status": suggestion_status,
                 "manual_required": manual_required,
+                "implementation_status": (
+                    "plan_candidate"
+                    if _is_executable_scoped_change(
+                        str(row.get("location_kind") or ""),
+                        str(row.get("json_path") or ""),
+                        str(row.get("field_kind") or ""),
+                    )
+                    else "manual_review"
+                ),
+                "implementation_reason": (
+                    ""
+                    if _is_executable_scoped_change(
+                        str(row.get("location_kind") or ""),
+                        str(row.get("json_path") or ""),
+                        str(row.get("field_kind") or ""),
+                    )
+                    else "Automatic apply is limited to variables and panel group.filter."
+                ),
             }
         )
         enriched_rows.append(out)

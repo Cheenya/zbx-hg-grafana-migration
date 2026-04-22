@@ -120,6 +120,8 @@ GRAFANA_SUGGESTION_HEADERS = [
     "suggested_value",
     "suggestion_status",
     "manual_required",
+    "implementation_status",
+    "implementation_reason",
 ]
 
 GRAFANA_ORG_SUMMARY_HEADERS = [
@@ -510,6 +512,8 @@ def _apply_kind_column_fills(ws, headers: Sequence[str]) -> None:
         "reason": ALERT_FILL,
         "unresolved_reasons": ALERT_FILL,
         "suggestion_status": ALERT_FILL,
+        "implementation_status": INFO_FILL,
+        "implementation_reason": INFO_FILL,
         "discovery_reason": ALERT_FILL,
         "scope_skip_reason": ALERT_FILL,
         "suggested_new_group": AS_FILL,
