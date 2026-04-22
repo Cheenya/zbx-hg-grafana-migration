@@ -956,6 +956,99 @@ def _preview_rows_for_object(
     return rows
 
 
+def _preview_rows_for_usergroup_right(
+    object_id: str,
+    object_name: str,
+    field_path: str,
+    old_groupid: str,
+    old_permission: str,
+    mapping_candidates: Dict[str, List[Dict[str, Any]]],
+    groupid_to_name: Dict[str, str],
+    existing_rights_by_groupid: Dict[str, str],
+    include_reason: str,
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    old_group = groupid_to_name.get(old_groupid, old_groupid)
+    candidates = mapping_candidates.get(old_groupid) or []
+    if not candidates:
+        return [
+            {
+                "object_type": "usergroup",
+                "object_id": object_id,
+                "object_name": object_name,
+                "where_found": "hostgroup_rights",
+                "field_path": field_path,
+                "old_group": old_group,
+                "old_groupid": old_groupid,
+                "candidate_new_group": "",
+                "candidate_new_groupid": "",
+                "candidate_rank": "",
+                "candidate_count": 0,
+                "target_kind": "",
+                "target_exists": "",
+                "mapping_status": "no_candidate",
+                "object_has_candidate_new": "",
+                "include_reason": include_reason,
+                "manual_required": "yes",
+                "reference_status": "",
+                "permission_status": "no_candidate",
+                "host_action": "",
+                "hosts_need_add_new": "",
+                "hosts_already_have_new": "",
+            }
+        ]
+
+    for candidate in candidates:
+        new_groupid = str(candidate.get("new_groupid") or "").strip()
+        target_exists = str(candidate.get("target_exists") or "").strip().lower() == "yes"
+        existing_new_permission = str(existing_rights_by_groupid.get(new_groupid) or "")
+        object_has_candidate_new = "yes" if existing_new_permission else ""
+        manual_mapping = str(candidate.get("manual_required") or "").strip().lower() == "yes"
+        if manual_mapping:
+            permission_status = "manual_mapping"
+            manual_required = "yes"
+        elif not target_exists:
+            permission_status = "missing_target"
+            manual_required = "yes"
+        elif existing_new_permission:
+            if existing_new_permission == old_permission:
+                permission_status = "already_has_new_permission"
+                manual_required = ""
+            else:
+                permission_status = "permission_conflict"
+                manual_required = "yes"
+        else:
+            permission_status = "needs_add_permission"
+            manual_required = ""
+
+        rows.append(
+            {
+                "object_type": "usergroup",
+                "object_id": object_id,
+                "object_name": object_name,
+                "where_found": "hostgroup_rights",
+                "field_path": field_path,
+                "old_group": old_group,
+                "old_groupid": old_groupid,
+                "candidate_new_group": str(candidate.get("new_group") or ""),
+                "candidate_new_groupid": new_groupid,
+                "candidate_rank": candidate.get("candidate_rank", ""),
+                "candidate_count": candidate.get("candidate_count", 0),
+                "target_kind": str(candidate.get("target_kind") or ""),
+                "target_exists": str(candidate.get("target_exists") or ""),
+                "mapping_status": str(candidate.get("status") or ""),
+                "object_has_candidate_new": object_has_candidate_new,
+                "include_reason": include_reason,
+                "manual_required": manual_required,
+                "reference_status": "",
+                "permission_status": permission_status,
+                "host_action": str(candidate.get("host_action") or ""),
+                "hosts_need_add_new": candidate.get("hosts_need_add_new", ""),
+                "hosts_already_have_new": candidate.get("hosts_already_have_new", ""),
+            }
+        )
+    return rows
+
 
 def build_scope_report(
     api: ZabbixAPI,
@@ -1620,8 +1713,14 @@ def build_scope_report(
     scoped_user_ids: Set[str] = set()
     for usergroup in usergroups:
         rights = usergroup.get("hostgroup_rights") or []
+        existing_rights_by_groupid = {
+            str((right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")).strip(): str(right.get("permission") or "")
+            for right in rights
+            if str((right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")).strip()
+        }
         touched_old_rights: List[str] = []
         touched_new_rights: List[str] = []
+        permission_statuses: Set[str] = set()
         for right in rights:
             group_id = str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")
             if group_id in object_old_scope_groupids:
@@ -1656,6 +1755,27 @@ def build_scope_report(
         if not include_reasons:
             continue
 
+        for index, right in enumerate(rights):
+            group_id = str(right.get("groupid") or right.get("id") or right.get("hostgroupid") or "")
+            if group_id not in object_old_scope_groupids:
+                continue
+            preview_rows = _preview_rows_for_usergroup_right(
+                usergroup_id,
+                str(usergroup.get("name") or ""),
+                f"hostgroup_rights[{index}].groupid",
+                group_id,
+                str(right.get("permission") or ""),
+                mapping_candidates,
+                groupid_to_name,
+                existing_rights_by_groupid,
+                f"old rights group={groupid_to_name.get(group_id, group_id)}",
+            )
+            zabbix_mapping_preview.extend(preview_rows)
+            for preview_row in preview_rows:
+                permission_status = str(preview_row.get("permission_status") or "").strip()
+                if permission_status:
+                    permission_statuses.add(permission_status)
+
         users_chunks: List[str] = []
         users_media: Set[str] = set()
         for user in usergroup.get("users") or []:
@@ -1671,7 +1791,12 @@ def build_scope_report(
                 "name": str(usergroup.get("name") or ""),
                 "rights_on_old_groups": "; ".join(touched_old_rights),
                 "rights_on_new_groups": "; ".join(touched_new_rights),
-                "candidate_new_groups_already_present": "yes" if touched_new_rights else "",
+                "candidate_new_groups_already_present": (
+                    "yes"
+                    if {"already_has_new_permission", "permission_conflict"}.intersection(permission_statuses)
+                    else ""
+                ),
+                "permission_status": join_sorted(permission_statuses),
                 "matching_tag_filters": "; ".join(sorted(set(matching_filters))),
                 "include_reason": ", ".join(include_reasons),
                 "users": ", ".join(users_chunks),

@@ -355,6 +355,7 @@ OBJECT_PREVIEW_HEADERS = [
     "where_found",
     "field_paths",
     "reference_status",
+    "permission_status",
     "current_groups",
     "add_env_groups",
     "add_as_groups",
@@ -388,6 +389,7 @@ USERGROUP_VIEW_HEADERS = [
     "usrgrpid",
     "name",
     "current_groups",
+    "permission_status",
     "add_env_groups",
     "add_as_groups",
     "add_gas_groups",
@@ -513,6 +515,7 @@ def _apply_kind_column_fills(ws, headers: Sequence[str]) -> None:
         "suggested_new_group": AS_FILL,
         "suggested_value": AS_FILL,
         "include_reason": INFO_FILL,
+        "permission_status": INFO_FILL,
         "matching_tag_filters": INFO_FILL,
         "field_paths": INFO_FILL,
         "where_found": INFO_FILL,
@@ -751,6 +754,7 @@ def _build_preview_index(rows: Sequence[Dict[str, Any]]) -> Dict[tuple[str, str]
                 "where_found": set(),
                 "field_paths": set(),
                 "reference_status": set(),
+                "permission_status": set(),
                 "current_groups": set(),
                 "add_env_groups": set(),
                 "add_as_groups": set(),
@@ -773,6 +777,9 @@ def _build_preview_index(rows: Sequence[Dict[str, Any]]) -> Dict[tuple[str, str]
         reference_status = str(row.get("reference_status") or "").strip()
         if reference_status:
             entry["reference_status"].add(reference_status)
+        permission_status = str(row.get("permission_status") or "").strip()
+        if permission_status:
+            entry["permission_status"].add(permission_status)
         include_reason = str(row.get("include_reason") or "").strip()
         if include_reason:
             entry["include_reason"].add(include_reason)
@@ -808,6 +815,7 @@ def _preview_entry_to_row(entry: Dict[str, Any]) -> Dict[str, Any]:
         "where_found": join_sorted(entry["where_found"]),
         "field_paths": join_sorted(entry["field_paths"]),
         "reference_status": join_sorted(entry["reference_status"]),
+        "permission_status": join_sorted(entry["permission_status"]),
         "current_groups": join_sorted(entry["current_groups"]),
         "add_env_groups": join_sorted(entry["add_env_groups"]),
         "add_as_groups": join_sorted(entry["add_as_groups"]),
@@ -865,6 +873,7 @@ def _build_usergroup_view_rows(usergroup_rows: Sequence[Dict[str, Any]], preview
                 "usrgrpid": row.get("usrgrpid", ""),
                 "name": row.get("name", ""),
                 "current_groups": current_groups,
+                "permission_status": row.get("permission_status", join_sorted(entry.get("permission_status", []))),
                 "add_env_groups": join_sorted(entry.get("add_env_groups", [])),
                 "add_as_groups": join_sorted(entry.get("add_as_groups", [])),
                 "add_gas_groups": join_sorted(entry.get("add_gas_groups", [])),
