@@ -11,6 +11,56 @@ from clients.api_clients import ZabbixAPI
 from core.common import autosize_columns, extract_action_groupids, join_sorted
 
 
+def _is_executable_grafana_field(location_kind: str, json_path: str, field_kind: str) -> bool:
+    lower_path = str(json_path or "").lower()
+    lower_kind = str(field_kind or "").strip().lower()
+    if any(marker in lower_path for marker in (".host.filter", ".hosts.filter", ".host_filter", ".hosts_filter")):
+        return False
+    if location_kind == "variable":
+        if lower_kind in {"query", "definition", "regex"}:
+            return True
+        return any(marker in lower_path for marker in (".current.", ".options["))
+    if location_kind == "panel":
+        return ".targets[" in lower_path and ".group.filter" in lower_path
+    return False
+
+
+def _grafana_row_key(row: Dict[str, Any]) -> Tuple[str, str, str, str, str, str, str]:
+    return (
+        str(row.get("grafana_org_id") or "").strip(),
+        str(row.get("dashboard_uid") or "").strip(),
+        str(row.get("location_kind") or "").strip(),
+        str(row.get("json_path") or "").strip(),
+        str(row.get("variable_name") or "").strip(),
+        str(row.get("panel_id") or "").strip(),
+        str(row.get("source_text") or ""),
+    )
+
+
+def _pick_grafana_suggestion(
+    row: Dict[str, Any],
+    suggestions_by_key: Dict[Tuple[str, str, str, str, str, str, str], List[Dict[str, Any]]],
+) -> Dict[str, Any] | None:
+    candidates = suggestions_by_key.get(_grafana_row_key(row)) or []
+    unique: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    priority = {
+        "exact_match": 0,
+        "manual_pattern_single": 1,
+        "no_target": 2,
+        "manual_pattern_ambiguous": 3,
+        "manual_pattern_unresolved": 4,
+    }
+    for candidate in sorted(candidates, key=lambda item: priority.get(str(item.get("suggestion_status") or ""), 99)):
+        old_group = str(candidate.get("old_group") or candidate.get("suggested_old_group") or "").strip()
+        new_group = str(candidate.get("new_group") or candidate.get("suggested_new_group") or "").strip()
+        if not old_group:
+            continue
+        unique.setdefault((old_group, new_group), candidate)
+    if len(unique) == 1:
+        return next(iter(unique.values()))
+    return None
+
+
 def load_audit_report(path: str) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
@@ -241,6 +291,9 @@ def build_impact_plan(
 
     mappings_by_oldid = {str(item["old_groupid"]): dict(item) for item in selected_mappings}
     mappings_by_oldname = {str(item["old_group"]): dict(item) for item in selected_mappings}
+    grafana_suggestions_by_key: Dict[Tuple[str, str, str, str, str, str, str], List[Dict[str, Any]]] = {}
+    for suggestion in audit_report.get("grafana_suggestions") or []:
+        grafana_suggestions_by_key.setdefault(_grafana_row_key(suggestion), []).append(dict(suggestion))
 
     actions = fetch_actions(api, inventory.get("actionids") or [])
     usergroups = fetch_usergroups(api, inventory.get("usergroupids") or [])
@@ -480,9 +533,14 @@ def build_impact_plan(
         match_type = str(row.get("match_type") or "")
         matched_string = str(row.get("matched_string") or "")
         location_kind = str(row.get("location_kind") or "")
+        field_kind = str(row.get("field_kind") or "")
+        json_path = str(row.get("json_path") or "")
+        executable_location = _is_executable_grafana_field(location_kind, json_path, field_kind)
+        suggestion = _pick_grafana_suggestion(row, grafana_suggestions_by_key)
 
         if match_type == "OLD":
-            mapping = mappings_by_oldname.get(matched_string)
+            resolved_old_group = str((suggestion or {}).get("old_group") or matched_string).strip()
+            mapping = mappings_by_oldname.get(resolved_old_group)
             if not mapping:
                 continue
             out_row = {
@@ -497,9 +555,9 @@ def build_impact_plan(
                 "variable_name": str(row.get("variable_name") or ""),
                 "variable_type": str(row.get("variable_type") or ""),
                 "location_kind": location_kind,
-                "field_kind": str(row.get("field_kind") or ""),
+                "field_kind": field_kind,
                 "reference_kind": str(row.get("reference_kind") or ""),
-                "json_path": str(row.get("json_path") or ""),
+                "json_path": json_path,
                 "source_text": str(row.get("source_text") or ""),
                 "match_type": match_type,
                 "change_kind": "replace_exact_string",
@@ -508,16 +566,16 @@ def build_impact_plan(
                 "matched_string": matched_string,
                 "pattern_key": str(row.get("pattern_key") or ""),
                 "manual_required": "",
-                "details": "",
+                "details": str((suggestion or {}).get("suggestion_status") or ""),
             }
-            if location_kind == "variable":
+            if executable_location:
                 grafana_changes.append(out_row)
             else:
                 grafana_manual_review.append(
                     {
                         **out_row,
                         "status": "unsupported_location",
-                        "message": "Non-variable Grafana matches stay in manual review and are not included in executable plan.",
+                        "message": "Grafana automatic apply is limited to variables and panel group.filter.",
                     }
                 )
             continue
@@ -525,19 +583,24 @@ def build_impact_plan(
         if match_type != "OLD_PATTERN":
             continue
 
-        related = [
-            mapping
-            for old_group, mapping in mappings_by_oldname.items()
-            if old_group.lower() in matched_string.lower()
-        ]
-        if len(related) == 1:
-            old_group = related[0]["old_group"]
-            new_group = related[0]["new_group"]
-            details = "pattern match requires manual review"
+        if suggestion:
+            old_group = str(suggestion.get("old_group") or suggestion.get("suggested_old_group") or "").strip()
+            new_group = str(suggestion.get("new_group") or suggestion.get("suggested_new_group") or "").strip()
+            details = str(suggestion.get("suggestion_status") or "pattern match requires manual review").strip()
         else:
-            old_group = ""
-            new_group = ""
-            details = "pattern match could not be mapped uniquely"
+            related = [
+                mapping
+                for old_group, mapping in mappings_by_oldname.items()
+                if old_group.lower() in matched_string.lower()
+            ]
+            if len(related) == 1:
+                old_group = related[0]["old_group"]
+                new_group = related[0]["new_group"]
+                details = "pattern match requires manual review"
+            else:
+                old_group = ""
+                new_group = ""
+                details = "pattern match could not be mapped uniquely"
 
         out_row = {
             "grafana_org_id": str(row.get("grafana_org_id") or ""),
@@ -551,9 +614,9 @@ def build_impact_plan(
             "variable_name": str(row.get("variable_name") or ""),
             "variable_type": str(row.get("variable_type") or ""),
             "location_kind": location_kind,
-            "field_kind": str(row.get("field_kind") or ""),
+            "field_kind": field_kind,
             "reference_kind": str(row.get("reference_kind") or ""),
-            "json_path": str(row.get("json_path") or ""),
+            "json_path": json_path,
             "source_text": str(row.get("source_text") or ""),
             "match_type": match_type,
             "change_kind": "review_pattern",
@@ -564,14 +627,14 @@ def build_impact_plan(
             "manual_required": "yes",
             "details": details,
         }
-        if location_kind == "variable":
+        if executable_location:
             grafana_changes.append(out_row)
         else:
             grafana_manual_review.append(
                 {
                     **out_row,
                     "status": "unsupported_location",
-                    "message": "Non-variable Grafana matches stay in manual review and are not included in executable plan.",
+                    "message": "Grafana automatic apply is limited to variables and panel group.filter.",
                 }
             )
 
